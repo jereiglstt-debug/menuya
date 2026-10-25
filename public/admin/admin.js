@@ -35,7 +35,16 @@ async function tokenRequest(grant, body) {
     method: 'POST', headers: { apikey: cfg.supabaseAnonKey, 'content-type': 'application/json' }, body: JSON.stringify(body),
   });
   const d = await res.json().catch(() => ({}));
-  if (!res.ok) return { error: res.status === 429 ? 'Demasiados intentos. Esperá unos minutos.' : 'Correo o contraseña incorrectos.' };
+  if (!res.ok) {
+    const code = d.error_code || d.code || '';
+    const text = `${d.msg || d.message || d.error_description || ''}`;
+    let error = 'Correo o contraseña incorrectos.';
+    if (res.status === 429) error = 'Demasiados intentos. Esperá unos minutos.';
+    else if (code === 'email_not_confirmed' || /not confirmed/i.test(text)) error = 'El usuario existe pero no está confirmado. En Supabase marcá “Confirm user” o recrealo con “Auto Confirm User”.';
+    else if (res.status === 401 || res.status === 403 || /api key|secret/i.test(text)) error = `La clave pública configurada en el servidor (SUPABASE_ANON_KEY) no es válida (HTTP ${res.status}). Revisá que sea la clave publishable/anon y no la secreta.`;
+    else if (res.status >= 500) error = 'Supabase no está respondiendo. Si el proyecto estaba pausado, reactivalo desde su panel.';
+    return { error };
+  }
   saveSession({ access_token: d.access_token, refresh_token: d.refresh_token, expires_at: Date.now() + (d.expires_in - 30) * 1000 });
   return {};
 }
@@ -265,5 +274,10 @@ async function viewAudit() {
 }
 
 // ---------- inicio ----------
-cfg = await (await fetch('/api/config')).json();
-session ? boot() : renderLogin();
+cfg = await fetch('/api/config').then((r) => r.json()).catch(() => ({}));
+if (!cfg.supabaseUrl) {
+  $app.replaceChildren(h('main', { class: 'center-card' }, h('h1', {}, 'Falta configurar el servidor'),
+    h('p', {}, cfg.missing ? `En Cloudflare faltan estas variables: ${cfg.missing.join(', ')}. Cargalas en Settings → Variables and secrets (en Production) y volvé a desplegar.` : 'No se pudo leer la configuración del servidor. Revisá que las variables estén cargadas en Cloudflare y que hayas vuelto a desplegar después.')));
+} else {
+  session ? boot() : renderLogin();
+}

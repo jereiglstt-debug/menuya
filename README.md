@@ -13,7 +13,7 @@ Todo lo que depende de servicios reales: RLS en Supabase real, formato exacto de
 2. En *SQL Editor* pegá y ejecutá `supabase/migrations/0001_plataforma.sql`.
 3. En *Authentication → Providers → Email*: desactivá "Allow new users to sign up" (**imprescindible: evita el registro público**) y subí la longitud mínima de contraseña a 10.
 4. En *Authentication → URL Configuration*: agregá `https://TU-PROYECTO.pages.dev/establecer-contrasena.html` a *Redirect URLs* (y ponelo también como Site URL).
-5. En *Project Settings → API* copiá: Project URL, `anon` key y `service_role` key.
+5. En *Project Settings → API Keys* copiá: Project URL, la clave **publishable** (`sb_publishable_...`, o `anon`) y la clave **secret** (`sb_secret_...`, o `service_role`). Ambos tipos de clave funcionan. Variables: `SUPABASE_ANON_KEY` = la publishable, `SUPABASE_SERVICE_ROLE_KEY` = la secret.
 6. **GitHub**: subí esta carpeta a un repositorio (el `.gitignore` ya excluye secretos).
 7. **Cloudflare**: Workers & Pages → Create → Pages → conectar el repositorio. Build command: vacío. Output directory: `public`.
 8. En el proyecto de Pages → *Settings → Variables and secrets*, agregá: `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY` (como **Secret**) y `SITE_URL` (la URL `.pages.dev` final). Volvé a desplegar.
@@ -22,7 +22,9 @@ Todo lo que depende de servicios reales: RLS en Supabase real, formato exacto de
    SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... SITE_URL=https://TU-PROYECTO.pages.dev \
    ADMIN_EMAIL=vos@correo.com node scripts/bootstrap-admin.mjs
    ```
+   **Windows:** esa sintaxis solo sirve en Mac/Linux. En PowerShell usá `$env:SUPABASE_URL="..."; $env:SUPABASE_SERVICE_ROLE_KEY="..."; $env:SITE_URL="..."; $env:ADMIN_EMAIL="..."; node scripts/bootstrap-admin.mjs`.
    Abre el enlace que imprime, elegí tu contraseña y entrá en `/admin/`. No hay contraseña predeterminada.
+   Si el enlace no funcionó o ya se usó, generá otro con `node scripts/admin-link.mjs` (mismas variables). `SITE_URL` debe ser tu dirección real, nunca el texto de ejemplo.
 10. **Anti-pausa**: en GitHub → Settings → Secrets → Actions, creá `SITE_URL`. El workflow `keepalive` se ejecuta solo.
 11. Recomendado: en Cloudflare → Security → WAF, una regla de *Rate limiting* sobre `/api/*` (el plan gratuito incluye una).
 

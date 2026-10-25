@@ -3,15 +3,17 @@
 import { HttpError } from './http.js';
 
 export function createDb(env, fetchImpl = fetch) {
-  const base = env.SUPABASE_URL?.replace(/\/$/, '');
+  let base;
+  try { base = new URL(String(env.SUPABASE_URL).trim()).origin; } catch { base = null; } // descarta rutas extra como /rest/v1
   if (!base || !env.SUPABASE_SERVICE_ROLE_KEY || !env.SUPABASE_ANON_KEY) {
     throw new HttpError(500, 'El servidor no está configurado correctamente.');
   }
-  const svc = {
-    apikey: env.SUPABASE_SERVICE_ROLE_KEY,
-    authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
-    'content-type': 'application/json',
-  };
+  // Las claves nuevas (sb_secret_...) van SOLO en "apikey": enviarlas también como
+  // Bearer provoca "Invalid JWT". Las claves legacy (JWT eyJ...) aceptan ambos.
+  const svc = { apikey: env.SUPABASE_SERVICE_ROLE_KEY, 'content-type': 'application/json' };
+  if (env.SUPABASE_SERVICE_ROLE_KEY.split('.').length === 3) {
+    svc.authorization = `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`;
+  }
 
   async function call(url, init) {
     let res;

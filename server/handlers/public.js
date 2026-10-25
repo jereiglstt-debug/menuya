@@ -5,7 +5,14 @@ import { featuresFor } from '../lib/plans.js';
 // Configuración PÚBLICA que necesita el navegador (la clave anon es pública
 // por diseño; la service_role nunca sale del servidor).
 export async function config({ env }) {
-  return json({ supabaseUrl: env.SUPABASE_URL, supabaseAnonKey: env.SUPABASE_ANON_KEY });
+  // Nombra las variables que faltan (nunca sus valores).
+  const missing = ['SUPABASE_URL', 'SUPABASE_ANON_KEY', 'SUPABASE_SERVICE_ROLE_KEY', 'SITE_URL'].filter((k) => !String(env[k] ?? '').trim());
+  let origin = null;
+  try { origin = new URL(String(env.SUPABASE_URL).trim()).origin; } catch { /* inválida */ }
+  if (missing.length || !origin) {
+    return json({ error: 'config_incompleta', missing: missing.length ? missing : ['SUPABASE_URL (no es una URL válida)'] }, 500);
+  }
+  return json({ supabaseUrl: origin, supabaseAnonKey: env.SUPABASE_ANON_KEY });
 }
 
 // Mantiene activo el proyecto gratuito de Supabase (evita la pausa por inactividad).

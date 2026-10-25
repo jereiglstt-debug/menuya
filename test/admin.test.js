@@ -118,3 +118,14 @@ test('rutas inexistentes y métodos incorrectos', async () => {
   assert.equal((await call('GET', '/no-existe')).status, 404);
   assert.equal((await call('DELETE', '/admin/restaurants')).status, 405);
 });
+
+test('/api/config avisa qué variables faltan, sin exponer valores', async () => {
+  const { handle } = await import('../server/router.js');
+  const res = await handle(new Request('https://x.pages.dev/api/config'), { SUPABASE_ANON_KEY: 'k' });
+  assert.equal(res.status, 500);
+  const d = await res.json();
+  assert.ok(d.missing.includes('SUPABASE_URL') && !JSON.stringify(d).includes('"k"'));
+  const ok = await handle(new Request('https://x.pages.dev/api/config'),
+    { SUPABASE_URL: 'https://a.supabase.co/rest/v1', SUPABASE_ANON_KEY: 'k', SUPABASE_SERVICE_ROLE_KEY: 's', SITE_URL: 'https://x' });
+  assert.equal((await ok.json()).supabaseUrl, 'https://a.supabase.co');
+});

@@ -13,7 +13,8 @@ if (!token) {
     ? 'Este enlace venció o ya fue usado. Pedile al administrador uno nuevo.'
     : 'El enlace no es válido. Abrilo desde el mensaje que recibiste o pedí uno nuevo.');
 } else {
-  const cfg = await (await fetch('/api/config')).json();
+  const cfg = await fetch('/api/config').then((r) => r.json()).catch(() => ({}));
+  if (!cfg.supabaseUrl) { $('form').classList.add('hidden'); fail('El servidor no está configurado todavía (faltan variables en Cloudflare).'); }
   $('form').addEventListener('submit', async (ev) => {
     ev.preventDefault();
     $('error').classList.add('hidden');
