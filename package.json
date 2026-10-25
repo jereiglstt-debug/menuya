@@ -1,0 +1,16 @@
+{
+  "name": "menuya",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Plataforma SaaS multi-restaurante de menús digitales",
+  "scripts": {
+    "test": "node --test \"test/*.test.js\"",
+    "dev": "wrangler pages dev public --compatibility-date=2024-11-01",
+    "deploy": "wrangler pages deploy public --project-name=menuya",
+    "bootstrap-admin": "node scripts/bootstrap-admin.mjs"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  }
+}

@@ -1,0 +1,33 @@
+# MenúYa — menús digitales multi-restaurante
+
+**Estado: Etapas 1 y 2 completas (administración, restaurantes, planes, suscripciones manuales). Etapas 3–6 pendientes.** Nada de esto está desplegado todavía.
+
+## Qué funciona (probado con pruebas automatizadas simuladas)
+Autorización de admin, creación de restaurante con invitación segura y rollback, slug único e inmutable, cambio de plan, suspensión, registro de pagos, auditoría, validaciones, permisos por plan. `npm test` → 26 pruebas.
+
+## Qué NO está verificado
+Todo lo que depende de servicios reales: RLS en Supabase real, formato exacto de respuestas de GoTrue/PostgREST, el panel en un navegador, despliegue y HTTPS. Las pruebas usan un Supabase simulado construido a partir de la documentación.
+
+## Despliegue (≈20 min, todo gratuito, sin tarjeta)
+1. **Supabase**: crear cuenta y un proyecto en supabase.com. Elegí una contraseña de base larga y guardala.
+2. En *SQL Editor* pegá y ejecutá `supabase/migrations/0001_plataforma.sql`.
+3. En *Authentication → Providers → Email*: desactivá "Allow new users to sign up" (**imprescindible: evita el registro público**) y subí la longitud mínima de contraseña a 10.
+4. En *Authentication → URL Configuration*: agregá `https://TU-PROYECTO.pages.dev/establecer-contrasena.html` a *Redirect URLs* (y ponelo también como Site URL).
+5. En *Project Settings → API* copiá: Project URL, `anon` key y `service_role` key.
+6. **GitHub**: subí esta carpeta a un repositorio (el `.gitignore` ya excluye secretos).
+7. **Cloudflare**: Workers & Pages → Create → Pages → conectar el repositorio. Build command: vacío. Output directory: `public`.
+8. En el proyecto de Pages → *Settings → Variables and secrets*, agregá: `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY` (como **Secret**) y `SITE_URL` (la URL `.pages.dev` final). Volvé a desplegar.
+9. **Primer administrador** (en tu computadora, con Node 20+):
+   ```
+   SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... SITE_URL=https://TU-PROYECTO.pages.dev \
+   ADMIN_EMAIL=vos@correo.com node scripts/bootstrap-admin.mjs
+   ```
+   Abre el enlace que imprime, elegí tu contraseña y entrá en `/admin/`. No hay contraseña predeterminada.
+10. **Anti-pausa**: en GitHub → Settings → Secrets → Actions, creá `SITE_URL`. El workflow `keepalive` se ejecuta solo.
+11. Recomendado: en Cloudflare → Security → WAF, una regla de *Rate limiting* sobre `/api/*` (el plan gratuito incluye una).
+
+## Uso diario
+*Nuevo restaurante* → completar nombre, dirección, correo y plan → copiar el enlace de invitación y enviárselo al propietario → registrar pagos en su ficha (esto fija plan y vigencia).
+
+## Desarrollo local
+`cp .env.example .dev.vars`, completar, `npm install`, `npm run dev`, `npm test`.
