@@ -4,11 +4,15 @@ import { featuresFor } from '../lib/plans.js';
 
 // Configuración PÚBLICA que necesita el navegador (la clave anon es pública
 // por diseño; la service_role nunca sale del servidor).
-export async function config({ env }) {
+export async function config({ env, request }) {
   // Nombra las variables que faltan (nunca sus valores).
   const missing = ['SUPABASE_URL', 'SUPABASE_ANON_KEY', 'SUPABASE_SERVICE_ROLE_KEY', 'SITE_URL'].filter((k) => !String(env[k] ?? '').trim());
   let origin = null;
   try { origin = new URL(String(env.SUPABASE_URL).trim()).origin; } catch { /* inválida */ }
+  // SUPABASE_URL no puede ser la dirección del propio sitio (error común al editar variables).
+  if (origin && origin === new URL(request.url).origin) {
+    return json({ error: 'config_incompleta', missing: ['SUPABASE_URL (apunta a este mismo sitio; debe ser la dirección de Supabase, https://xxxx.supabase.co)'] }, 500);
+  }
   if (missing.length || !origin) {
     return json({ error: 'config_incompleta', missing: missing.length ? missing : ['SUPABASE_URL (no es una URL válida)'] }, 500);
   }

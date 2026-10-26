@@ -129,3 +129,11 @@ test('/api/config avisa qué variables faltan, sin exponer valores', async () =>
     { SUPABASE_URL: 'https://a.supabase.co/rest/v1', SUPABASE_ANON_KEY: 'k', SUPABASE_SERVICE_ROLE_KEY: 's', SITE_URL: 'https://x' });
   assert.equal((await ok.json()).supabaseUrl, 'https://a.supabase.co');
 });
+
+test('/api/config rechaza SUPABASE_URL igual al propio sitio', async () => {
+  const { handle } = await import('../server/router.js');
+  const res = await handle(new Request('https://menuya.pages.dev/api/config'),
+    { SUPABASE_URL: 'https://menuya.pages.dev', SUPABASE_ANON_KEY: 'k', SUPABASE_SERVICE_ROLE_KEY: 's', SITE_URL: 'https://menuya.pages.dev' });
+  assert.equal(res.status, 500);
+  assert.match(JSON.stringify(await res.json()), /mismo sitio/);
+});

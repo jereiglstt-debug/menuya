@@ -42,6 +42,7 @@ async function tokenRequest(grant, body) {
     if (res.status === 429) error = 'Demasiados intentos. Esperá unos minutos.';
     else if (code === 'email_not_confirmed' || /not confirmed/i.test(text)) error = 'El usuario existe pero no está confirmado. En Supabase marcá “Confirm user” o recrealo con “Auto Confirm User”.';
     else if (res.status === 401 || res.status === 403 || /api key|secret/i.test(text)) error = `La clave pública configurada en el servidor (SUPABASE_ANON_KEY) no es válida (HTTP ${res.status}). Revisá que sea la clave publishable/anon y no la secreta.`;
+    else if (res.status === 404 || res.status === 405) error = `El login no llegó a Supabase (HTTP ${res.status}). Revisá la variable SUPABASE_URL en Cloudflare.`;
     else if (res.status >= 500) error = 'Supabase no está respondiendo. Si el proyecto estaba pausado, reactivalo desde su panel.';
     return { error };
   }
