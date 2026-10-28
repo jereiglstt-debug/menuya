@@ -18,3 +18,17 @@ export async function requireAdmin(request, db) {
   if (!rows?.length) throw new HttpError(403, 'No tenés permisos de administrador.');
   return user;
 }
+
+// El restaurante SIEMPRE se deriva de la sesión; ningún identificador de
+// restaurante enviado por el cliente se usa para decidir a qué datos accede.
+export async function requireOwner(request, db) {
+  const user = await authenticate(request, db);
+  const owners = await db.rest('restaurant_owners', { query: { select: 'restaurant_id', user_id: `eq.${user.id}` } });
+  if (!owners?.length) throw new HttpError(403, 'Tu cuenta no está asociada a ningún restaurante.');
+  const rows = await db.rest('restaurants', {
+    query: { select: 'id,slug,name,description,plan,status,draft_changed_at', id: `eq.${owners[0].restaurant_id}` },
+  });
+  if (!rows?.length) throw new HttpError(403, 'Tu cuenta no está asociada a ningún restaurante.');
+  if (rows[0].status === 'suspendido') throw new HttpError(403, 'Tu cuenta está suspendida. Comunicate con el administrador.');
+  return { user, restaurant: rows[0] };
+}

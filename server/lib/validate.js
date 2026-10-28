@@ -83,3 +83,54 @@ export function validatePaymentInput(b) {
   note === null ? (errors.note = 'La nota puede tener hasta 300 caracteres.') : (out.note = note);
   return { ok: Object.keys(errors).length === 0, errors, value: out };
 }
+
+export const isSlugFormat = (s) => typeof s === 'string' && SLUG_RE.test(s) && !s.includes('--');
+
+export function validateCategoryInput(b) {
+  const name = str(b.name, { min: 1, max: 60 });
+  return name === null
+    ? { ok: false, errors: { name: 'El nombre debe tener entre 1 y 60 caracteres.' } }
+    : { ok: true, errors: {}, value: { name } };
+}
+
+export function validateProductInput(b, { partial = false } = {}) {
+  const errors = {}; const out = {};
+  if (!partial || b.name !== undefined) {
+    const v = str(b.name, { min: 1, max: 80 });
+    v === null ? (errors.name = 'El nombre debe tener entre 1 y 80 caracteres.') : (out.name = v);
+  }
+  if (b.description !== undefined) {
+    const v = str(b.description, { max: 300 });
+    v === null ? (errors.description = 'La descripción puede tener hasta 300 caracteres.') : (out.description = v);
+  }
+  if (!partial || b.price_ars !== undefined) {
+    const n = typeof b.price_ars === 'number' ? b.price_ars : Number(String(b.price_ars ?? '').replace(',', '.'));
+    if (b.price_ars === '' || b.price_ars === null || !Number.isFinite(n) || n < 0 || n > 10000000) {
+      errors.price_ars = 'Ingresá un precio válido en pesos (0 o más).';
+    } else out.price_ars = Math.round(n * 100) / 100;
+  }
+  if (b.available !== undefined) {
+    typeof b.available === 'boolean' ? (out.available = b.available) : (errors.available = 'Valor inválido.');
+  }
+  if (!partial || b.category_id !== undefined) {
+    isUuid(b.category_id) ? (out.category_id = b.category_id) : (errors.category_id = 'Elegí una categoría.');
+  }
+  return { ok: Object.keys(errors).length === 0, errors, value: out };
+}
+
+export function validateSettingsInput(b) {
+  const errors = {}; const out = {};
+  if (b.title !== undefined) {
+    const v = str(b.title, { max: 80 });
+    v === null ? (errors.title = 'El nombre puede tener hasta 80 caracteres.') : (out.title = v);
+  }
+  if (b.description !== undefined) {
+    const v = str(b.description, { max: 500 });
+    v === null ? (errors.description = 'La descripción puede tener hasta 500 caracteres.') : (out.description = v);
+  }
+  return { ok: Object.keys(errors).length === 0, errors, value: out };
+}
+
+export function validateIdList(ids) {
+  return Array.isArray(ids) && ids.length <= 500 && ids.every(isUuid) && new Set(ids).size === ids.length;
+}

@@ -2,6 +2,8 @@ import { createDb } from './lib/supabase.js';
 import { errorResponse, HttpError } from './lib/http.js';
 import * as admin from './handlers/admin.js';
 import * as pub from './handlers/public.js';
+import * as owner from './handlers/owner.js';
+import { publicMenu } from './handlers/publicMenu.js';
 
 const ROUTES = [
   ['GET',   /^\/config$/,                          pub.config, false],
@@ -14,6 +16,26 @@ const ROUTES = [
   ['POST',  /^\/admin\/restaurants\/([^/]+)\/payments$/,    admin.registerPayment],
   ['POST',  /^\/admin\/restaurants\/([^/]+)\/access-link$/, admin.accessLink],
   ['GET',   /^\/admin\/audit$/,                    admin.listAudit],
+
+  ['GET',    /^\/public\/menu\/([^/]+)$/,            publicMenu],
+
+  ['GET',    /^\/owner\/menu$/,                      owner.getMenu],
+  ['GET',    /^\/owner\/preview$/,                   owner.preview],
+  ['PATCH',  /^\/owner\/settings$/,                  owner.updateSettings],
+  ['POST',   /^\/owner\/logo$/,                      owner.uploadLogo],
+  ['DELETE', /^\/owner\/logo$/,                      owner.deleteLogo],
+  ['POST',   /^\/owner\/publish$/,                   owner.publish],
+  ['POST',   /^\/owner\/categories$/,                owner.createCategory],
+  ['POST',   /^\/owner\/categories\/reorder$/,       owner.reorderCategories],
+  ['PATCH',  /^\/owner\/categories\/([^/]+)$/,      owner.updateCategory],
+  ['DELETE', /^\/owner\/categories\/([^/]+)$/,      owner.deleteCategory],
+  ['POST',   /^\/owner\/products$/,                  owner.createProduct],
+  ['POST',   /^\/owner\/products\/reorder$/,         owner.reorderProducts],
+  ['PATCH',  /^\/owner\/products\/([^/]+)$/,        owner.updateProduct],
+  ['DELETE', /^\/owner\/products\/([^/]+)$/,        owner.deleteProduct],
+  ['POST',   /^\/owner\/products\/([^/]+)\/duplicate$/, owner.duplicateProduct],
+  ['POST',   /^\/owner\/products\/([^/]+)\/image$/, owner.uploadProductImage],
+  ['DELETE', /^\/owner\/products\/([^/]+)\/image$/, owner.deleteProductImage],
 ];
 
 export async function handle(request, env, fetchImpl = fetch) {

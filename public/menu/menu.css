@@ -1,0 +1,26 @@
+.menu{--m-bg:#fbfaf7;--m-surface:#fff;--m-ink:#1d1b18;--m-muted:#6b665e;--m-line:#e6e1d8;--m-accent:#9a3412;
+  --m-font:"Figtree",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  font-family:var(--m-font);background:var(--m-bg);color:var(--m-ink);line-height:1.45}
+.menu *{box-sizing:border-box}
+.menu{max-width:720px;margin:0 auto;padding:0 16px 48px}
+.m-head{text-align:center;padding:32px 0 16px}
+.m-logo{width:88px;height:88px;object-fit:cover;border-radius:50%;border:1px solid var(--m-line);margin-bottom:12px}
+.m-head h1{margin:0;font-size:1.7rem;line-height:1.15}
+.m-desc{margin:8px auto 0;max-width:46ch;color:var(--m-muted)}
+.m-nav{position:sticky;top:0;z-index:5;display:flex;gap:8px;overflow-x:auto;padding:10px 0;background:var(--m-bg);border-bottom:1px solid var(--m-line);scrollbar-width:none}
+.m-nav::-webkit-scrollbar{display:none}
+.m-nav a{flex:none;padding:8px 14px;border:1px solid var(--m-line);border-radius:999px;background:var(--m-surface);color:var(--m-ink);text-decoration:none;font-weight:600;font-size:.92rem;min-height:40px;display:inline-flex;align-items:center}
+.m-nav a:focus-visible{outline:3px solid var(--m-accent);outline-offset:2px}
+.m-cat{padding-top:24px;scroll-margin-top:64px}
+.m-cat h2{font-size:1.2rem;margin:0 0 10px;padding-bottom:6px;border-bottom:2px solid var(--m-accent);display:inline-block}
+.m-list{list-style:none;margin:0;padding:0;display:grid;gap:10px}
+.m-item{display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:start;background:var(--m-surface);border:1px solid var(--m-line);border-radius:12px;padding:12px}
+.m-item:not(:has(.m-img)){grid-template-columns:1fr auto}
+.m-img{width:96px;height:96px;object-fit:cover;border-radius:8px;background:var(--m-line)}
+.m-body h3{margin:0;font-size:1.02rem}
+.m-body p{margin:4px 0 0;color:var(--m-muted);font-size:.92rem}
+.m-price{font-weight:700;white-space:nowrap}
+.m-item.off{opacity:.62}
+.m-tag{display:inline-block;margin-top:6px;padding:2px 10px;border-radius:999px;background:#ece7de;color:#5b564e;font-size:.78rem;font-weight:700}
+.m-empty{text-align:center;color:var(--m-muted);padding:40px 0}
+@media (max-width:420px){.m-img{width:76px;height:76px}.m-item{gap:10px;padding:10px}}

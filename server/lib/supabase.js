@@ -82,6 +82,26 @@ export function createDb(env, fetchImpl = fetch) {
       return { link: data.action_link, userId: data.id ?? data.user?.id };
     },
 
+    // ---- Storage (bucket público "menu-images"; solo el servidor escribe) ----
+    async storageUpload(path, bytes, contentType) {
+      const { 'content-type': _ct, ...base0 } = svc;
+      const { res } = await call(`${base}/storage/v1/object/menu-images/${path}`, {
+        method: 'POST', headers: { ...base0, 'content-type': contentType, 'x-upsert': 'false' }, body: bytes,
+      });
+      if (!res.ok) { console.error('Error al subir imagen:', res.status); throw new HttpError(502, 'No se pudo guardar la imagen. Intentá de nuevo.'); }
+    },
+    async storageDelete(paths) {
+      if (!paths.length) return;
+      await call(`${base}/storage/v1/object/menu-images`, { method: 'DELETE', headers: svc, body: JSON.stringify({ prefixes: paths }) });
+    },
+    async storageCopy(from, to) {
+      const { res } = await call(`${base}/storage/v1/object/copy`, {
+        method: 'POST', headers: svc, body: JSON.stringify({ bucketId: 'menu-images', sourceKey: from, destinationKey: to }),
+      });
+      return res.ok;
+    },
+    publicUrl: (path) => (path ? `${base}/storage/v1/object/public/menu-images/${path}` : null),
+
     async deleteUser(userId) {
       await call(`${base}/auth/v1/admin/users/${userId}`, { method: 'DELETE', headers: svc });
     },

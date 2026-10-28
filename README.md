@@ -1,6 +1,6 @@
 # MenúYa — menús digitales multi-restaurante
 
-**Estado: Etapas 1 y 2 completas (administración, restaurantes, planes, suscripciones manuales). Etapas 3–6 pendientes.** Nada de esto está desplegado todavía.
+**Estado: Etapas 1 y 2 desplegadas y verificadas en producción. Etapa 3 (primera tanda: panel del propietario, catálogo, imágenes, borrador/publicación, menú público) construida y probada con pruebas simuladas; falta verificarla en el entorno real.** Pendientes: diseño/plantillas y QR (Etapa 3, tanda 2), WhatsApp y carrito (Etapa 4), pedidos Premium (Etapa 4).
 
 ## Qué funciona (probado con pruebas automatizadas simuladas)
 Autorización de admin, creación de restaurante con invitación segura y rollback, slug único e inmutable, cambio de plan, suspensión, registro de pagos, auditoría, validaciones, permisos por plan. `npm test` → 26 pruebas.
@@ -33,3 +33,11 @@ Todo lo que depende de servicios reales: RLS en Supabase real, formato exacto de
 
 ## Desarrollo local
 `cp .env.example .dev.vars`, completar, `npm install`, `npm run dev`, `npm test`.
+
+
+## Etapa 3 (primera tanda): cómo activarla
+1. **Base de datos:** en el SQL Editor de Supabase pegá y ejecutá `supabase/migrations/0002_catalogo.sql` completo. Debe terminar sin errores en rojo.
+2. **Almacenamiento:** en *Storage* debe aparecer un bucket llamado `menu-images` (la migración lo crea). Si no aparece, creálo a mano como *Public* con límite de 2 MB y tipos `image/jpeg, image/png, image/webp`.
+3. **Verificar aislamiento:** pegá y ejecutá `supabase/tests/aislamiento.sql`. Tiene que terminar mostrando `AISLAMIENTO OK`. No deja datos (hace rollback).
+4. **Desplegar:** subí los archivos nuevos a GitHub; Cloudflare despliega solo. No hay variables nuevas.
+5. **Probar:** entrá a `/panel/` con la cuenta de un propietario de prueba, creá una categoría y un producto con foto, mirá la *Vista previa*, tocá *Publicar cambios* y abrí `/<direccion-del-local>`.

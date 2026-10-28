@@ -13,8 +13,8 @@ const SECURITY_HEADERS = {
   'referrer-policy': 'no-referrer',
 };
 
-export function json(data, status = 200) {
-  return new Response(JSON.stringify(data), { status, headers: SECURITY_HEADERS });
+export function json(data, status = 200, extraHeaders = {}) {
+  return new Response(JSON.stringify(data), { status, headers: { ...SECURITY_HEADERS, ...extraHeaders } });
 }
 
 const MAX_BODY = 32 * 1024;
