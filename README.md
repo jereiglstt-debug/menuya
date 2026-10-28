@@ -41,3 +41,5 @@ Todo lo que depende de servicios reales: RLS en Supabase real, formato exacto de
 3. **Verificar aislamiento:** pegá y ejecutá `supabase/tests/aislamiento.sql`. Tiene que terminar mostrando `AISLAMIENTO OK`. No deja datos (hace rollback).
 4. **Desplegar:** subí los archivos nuevos a GitHub; Cloudflare despliega solo. No hay variables nuevas.
 5. **Probar:** entrá a `/panel/` con la cuenta de un propietario de prueba, creá una categoría y un producto con foto, mirá la *Vista previa*, tocá *Publicar cambios* y abrí `/<direccion-del-local>`.
+
+   
