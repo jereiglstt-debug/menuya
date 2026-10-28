@@ -23,8 +23,9 @@ export function designTab({ S, api, act, toast, checkFile, IMG_TYPES, confirmDlg
   const data = () => ({
     title: S.settings.title || S.restaurant.name, description: S.settings.description, logo_url: S.settings.logo_url,
     cover_url: S.cover_url, design: D,
+    promotions: S.capabilities.features.includes('promociones') ? S.promotions.filter((p) => p.active) : [],
     categories: S.categories.some((c) => c.products.length)
-      ? S.categories.map((c) => ({ name: c.name, products: c.products.map((p) => ({ ...p })) })) : SAMPLE,
+      ? S.categories.map((c) => ({ name: c.name, products: c.products.map((p) => ({ ...p, featured: p.featured && S.capabilities.features.includes('destacados') })) })) : SAMPLE,
   });
   function refresh() {
     preview.replaceChildren(renderMenu(data()));

@@ -1,7 +1,6 @@
 import { json, HttpError } from '../lib/http.js';
 import { isSlugFormat } from '../lib/validate.js';
-import { sanitizeDesign } from '../../public/shared/design.js';
-import { designPermissions } from '../lib/plans.js';
+import { publicShape } from '../lib/publicShape.js';
 
 // Menú público: sin sesión. Solo expone la ÚLTIMA instantánea publicada de
 // restaurantes activos; el borrador nunca sale por aquí.
@@ -14,15 +13,5 @@ export async function publicMenu({ db, params }) {
     query: { select: 'snapshot,published_at', restaurant_id: `eq.${r.id}`, order: 'version.desc', limit: '1' },
   });
   if (!v) throw new HttpError(404, 'Este menú todavía no fue publicado.');
-  const s = v.snapshot;
-  const perms = designPermissions(r.plan);
-  return json({
-    design: sanitizeDesign(s.design, perms),
-    cover_url: perms.advanced ? db.publicUrl(s.cover_path) : null,
-    title: s.title, description: s.description, logo_url: db.publicUrl(s.logo_path), published_at: v.published_at,
-    categories: s.categories.map((c) => ({
-      name: c.name,
-      products: c.products.map((p) => ({ name: p.name, description: p.description, price_ars: p.price_ars, available: p.available, image_url: db.publicUrl(p.image_path) })),
-    })),
-  }, 200, { 'cache-control': 'public, max-age=30' });
+  return json({ ...publicShape(v.snapshot, r.plan, db), published_at: v.published_at }, 200, { 'cache-control': 'public, max-age=30' });
 }

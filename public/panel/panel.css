@@ -58,3 +58,7 @@ dialog.wide{width:min(720px,96vw);max-height:92vh;overflow:auto}
 .qr-wrap{display:grid;place-items:center;margin:1rem 0}
 .qr-canvas{width:min(320px,100%);height:auto;border:1px solid var(--line);image-rendering:pixelated}
 @media (max-width:760px){.design-grid{grid-template-columns:1fr}}
+
+.tag-star{display:inline-block;background:#fff3cd;color:#664d03;border-radius:999px;padding:0 .5rem;font-size:.75rem;font-weight:600;margin-left:.4rem}
+.promo-row{display:grid;grid-template-columns:1fr auto;gap:.6rem;align-items:center;padding:.7rem;border:1px solid var(--line);border-radius:10px;margin-bottom:.5rem}
+.promo-row.off{opacity:.6}

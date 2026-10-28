@@ -52,3 +52,20 @@ Qué se aplica en el servidor (probado con tests automáticos): plantillas por p
 Qué NO puede imponer el servidor: los colores y el texto del QR se dibujan en el navegador; el plan solo se refleja en la interfaz. El QR en sí solo contiene la URL pública.
 Sin verificar por mí: el aspecto visual real en navegador, `0003_diseno.sql` en Postgres real, y el escaneo con tu celular.
 
+## Etapa 4 (primera tanda): destacados, promociones, carrito y WhatsApp — cómo activarla
+
+1. Ejecutá `supabase/migrations/0004_destacados_promos_whatsapp.sql` en el SQL Editor de Supabase.
+2. Subí los archivos a GitHub (`main`) y esperá el deploy nuevo (sin "Retry deployment" en deploys viejos).
+3. En el panel: cargá el WhatsApp en **Tu negocio**; las **Promociones** tienen su pestaña; el “Producto destacado” está en el formulario de producto.
+
+| Función | Plan | Dónde se exige |
+|---|---|---|
+| Botón “Consultar por WhatsApp” (mensaje preparado) | Básico+ | servidor (nunca se muestra sin número) |
+| Productos destacados | Profesional+ | servidor (403 al marcar) y al mostrar |
+| Promociones visuales (hasta 10, solo texto) | Profesional+ | servidor (403) y al mostrar |
+| Carrito + mensaje de pedido organizado | Profesional+ | al mostrar el menú (requiere WhatsApp cargado) |
+
+Importante y honesto: el carrito **no crea pedidos** en la plataforma. Arma un texto y abre WhatsApp; el local lo confirma. Los precios del mensaje son los del menú publicado que vio el cliente. Los pedidos nativos, mesas y delivery son de Premium y vienen en la siguiente tanda.
+Las promociones no cambian precios (son banners de texto) y se ordenan por antigüedad.
+
+Cómo se probó: tests automáticos (`npm test`), más `node test/e2e/navegador.mjs` (Chromium real, CSP de producción, servidor simulado). No verificado: `0004` en Postgres real, ni que WhatsApp abra bien en tu celular.

@@ -8,7 +8,7 @@ export const JPEG = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3, 4, 5, 6]);
 export const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2]);
 
 export function makeWorld() {
-  const t = { restaurants: [], restaurant_owners: [], platform_admins: [], categories: [], products: [], menu_settings: [], menu_versions: [], pending_image_deletes: [], audit_log: [] };
+  const t = { restaurants: [], restaurant_owners: [], platform_admins: [], categories: [], products: [], menu_settings: [], menu_versions: [], pending_image_deletes: [], audit_log: [], promotions: [] };
   const storage = new Map(); const users = {}; let tick = 0;
   const now = () => new Date(Date.UTC(2026, 9, 28, 12, 0, tick++)).toISOString();
   const reply = (d, s = 200) => new Response(d === undefined ? null : JSON.stringify(d), { status: s });
@@ -39,10 +39,11 @@ export function makeWorld() {
       if (!prods.length) return reply({ code: 'P0001', message: 'Agregá al menos un producto antes de publicar.' }, 400);
       const s = t.menu_settings.find((x) => x.restaurant_id === r.id);
       const snapshot = {
-        title: s?.title || r.name, description: s?.description || r.description, logo_path: s?.logo_path ?? null, cover_path: s?.cover_path ?? null, design: s?.design ?? {},
+        title: s?.title || r.name, description: s?.description || r.description, logo_path: s?.logo_path ?? null, cover_path: s?.cover_path ?? null, design: s?.design ?? {}, whatsapp: s?.whatsapp ?? null,
+        promotions: t.promotions.filter((x) => x.restaurant_id === r.id && x.active).map(({ title, description }) => ({ title, description })),
         categories: sorted(t.categories.filter((c) => c.restaurant_id === r.id), 'position.asc')
           .filter((c) => prods.some((p) => p.category_id === c.id))
-          .map((c) => ({ id: c.id, name: c.name, products: sorted(prods.filter((p) => p.category_id === c.id), 'position.asc').map(({ id, name, description, price_ars, image_path, available }) => ({ id, name, description, price_ars, image_path, available })) })),
+          .map((c) => ({ id: c.id, name: c.name, products: sorted(prods.filter((p) => p.category_id === c.id), 'position.asc').map(({ id, name, description, price_ars, image_path, available, featured }) => ({ id, name, description, price_ars, image_path, available, featured: !!featured })) })),
       };
       const version = Math.max(0, ...t.menu_versions.filter((v) => v.restaurant_id === r.id).map((v) => v.version)) + 1;
       t.menu_versions.push({ restaurant_id: r.id, version, snapshot, published_at: now() });
@@ -63,10 +64,10 @@ export function makeWorld() {
     const tbl = m[1]; const rows = t[tbl]; const wantRows = /representation/.test(init.headers?.prefer || '');
     if (method === 'GET') { let r = sorted(rows.filter((x) => match(x, u)), u.searchParams.get('order')); if (u.searchParams.get('limit')) r = r.slice(0, +u.searchParams.get('limit')); return reply(r.map((x) => ({ ...x }))); }
     if (method === 'POST') {
-      const row = { id: crypto.randomUUID(), created_at: now(), ...body };
+      const row = { id: crypto.randomUUID(), created_at: now(), ...(tbl === 'products' ? { featured: false } : {}), ...body };
       if (tbl === 'pending_image_deletes' && rows.some((x) => x.path === body.path)) return reply({ code: '23505' }, 409);
       if (tbl === 'products' && !t.categories.some((c) => c.id === body.category_id && c.restaurant_id === body.restaurant_id)) return reply({ code: '23503' }, 409);
-      rows.push(row); if (['categories', 'products', 'menu_settings'].includes(tbl)) touch(body.restaurant_id);
+      rows.push(row); if (['categories', 'products', 'menu_settings', 'promotions'].includes(tbl)) touch(body.restaurant_id);
       return reply(wantRows ? [row] : undefined, 201);
     }
     if (method === 'PATCH') { const hit = rows.filter((x) => match(x, u)); hit.forEach((x) => { Object.assign(x, body); if (x.restaurant_id && tbl !== 'restaurants') touch(x.restaurant_id); }); return wantRows ? reply(hit.map((x) => ({ ...x }))) : reply(undefined, 204); }

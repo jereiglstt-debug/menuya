@@ -5,6 +5,7 @@ import { h, money, toast, createSession } from '/shared/core.js';
 import { renderMenu } from '/menu/render.js';
 import { designTab } from '/panel/diseno.js';
 import { qrTab } from '/panel/qrtab.js';
+import { promosTab } from '/panel/promos.js';
 
 const $app = document.getElementById('app');
 const PLAN = { basico: 'Básico', profesional: 'Profesional', premium: 'Premium' };
@@ -21,7 +22,7 @@ const session = createSession(cfg, 'owner-sess', (msg) => renderLogin(msg));
 const api = session.api;
 let S = null;
 let TAB = 'menu';
-const TABS = [['menu', 'Menú'], ['diseno', 'Diseño'], ['qr', 'Código QR']];
+const TABS = [['menu', 'Menú'], ['promos', 'Promociones'], ['diseno', 'Diseño'], ['qr', 'Código QR']];
 
 // ---------- login ----------
 function renderLogin(msg) {
@@ -139,6 +140,7 @@ function render() {
     h('main', { class: 'wrap' }, statusBar,
       h('div', { class: 'tabs', role: 'tablist' }, TABS.map(([k, l]) => h('button', { role: 'tab', 'aria-selected': String(TAB === k), class: `tab${TAB === k ? ' on' : ''}`, onclick: () => { TAB = k; render(); } }, l))),
       TAB === 'menu' ? [businessCard(), menuSection()]
+        : TAB === 'promos' ? promosTab({ S, api, act, confirmDlg })
         : TAB === 'diseno' ? designTab({ S, api, act, toast, checkFile, IMG_TYPES, confirmDlg })
         : qrTab({ S })));
 }
@@ -155,6 +157,7 @@ async function doPublish(btn) {
 function businessCard() {
   const title = h('input', { id: 'b-title', maxlength: '80', value: S.settings.title });
   const desc = h('textarea', { id: 'b-desc', maxlength: '500' }, S.settings.description);
+  const wa = h('input', { id: 'b-wa', type: 'tel', inputmode: 'numeric', maxlength: '24', autocomplete: 'off', value: S.settings.whatsapp ?? '' });
   const file = h('input', { type: 'file', accept: IMG_TYPES.join(','), class: 'hidden', 'aria-label': 'Elegir logotipo', onchange: async () => {
     const f = file.files[0]; if (!f) return;
     const bad = checkFile(f); if (bad) return toast(bad);
@@ -169,7 +172,9 @@ function businessCard() {
         h('p', { class: 'hint' }, 'JPG, PNG o WebP. Hasta 2 MB.'))),
     h('label', { for: 'b-title' }, 'Nombre que se muestra en el menú'), title,
     h('label', { for: 'b-desc' }, 'Descripción (opcional)'), desc,
-    h('div', { class: 'actions' }, h('button', { class: 'btn primary', onclick: () => act(() => api('/owner/settings', { method: 'PATCH', body: { title: title.value, description: desc.value } }), 'Datos guardados en el borrador') }, 'Guardar datos')));
+    h('label', { for: 'b-wa' }, 'WhatsApp del local (opcional)'), wa,
+    h('p', { class: 'hint' }, 'Con código de país y sin el 0 ni el 15. Ejemplo: 5491122334455. Los clientes lo usan para escribirte' + (S.capabilities.features.includes('carrito') ? ' y para enviarte su pedido armado.' : '.')),
+    h('div', { class: 'actions' }, h('button', { class: 'btn primary', onclick: () => act(() => api('/owner/settings', { method: 'PATCH', body: { title: title.value, description: desc.value, whatsapp: wa.value } }), 'Datos guardados en el borrador') }, 'Guardar datos')));
 }
 function checkFile(f) {
   if (!IMG_TYPES.includes(f.type)) return 'Formato no permitido. Usá JPG, PNG o WebP.';
@@ -212,7 +217,7 @@ function productRow(p, c) {
   return h('li', { class: `prow${p.available ? '' : ' off'}`, 'data-id': p.id, draggable: 'true' },
     h('span', { class: 'handle', title: 'Arrastrar para ordenar', 'aria-hidden': 'true' }, '⋮⋮'),
     p.image_url ? h('img', { class: 'thumb', src: p.image_url, alt: '' }) : h('span', { class: 'thumb' }, 'Sin foto'),
-    h('div', {}, h('div', { class: 'pname' }, p.name, !p.available && h('span', { class: 'tag-off' }, 'Agotado')), h('div', { class: 'pmeta' }, money(p.price_ars))),
+    h('div', {}, h('div', { class: 'pname' }, p.name, p.featured && h('span', { class: 'tag-star' }, '★ Destacado'), !p.available && h('span', { class: 'tag-off' }, 'Agotado')), h('div', { class: 'pmeta' }, money(p.price_ars))),
     h('div', { class: 'pacts' },
       h('button', { class: 'btn small', 'aria-label': `Subir ${p.name}`, disabled: i === 0, onclick: () => reorder(-1) }, '↑'),
       h('button', { class: 'btn small', 'aria-label': `Bajar ${p.name}`, disabled: i === ids.length - 1, onclick: () => reorder(1) }, '↓'),
@@ -230,8 +235,10 @@ function productDialog(p, categoryId) {
     price: h('input', { id: 'f-price', inputmode: 'decimal', required: true, value: p ? String(p.price_ars).replace('.', ',') : '', placeholder: '0' }),
     cat: h('select', { id: 'f-cat' }, S.categories.map((c) => h('option', { value: c.id, selected: c.id === (p?.category_id ?? categoryId) }, c.name))),
     avail: h('input', { id: 'f-av', type: 'checkbox', checked: p ? p.available : true }),
+    feat: h('input', { id: 'f-ft', type: 'checkbox', checked: !!p?.featured }),
     file: h('input', { type: 'file', accept: IMG_TYPES.join(','), class: 'hidden', 'aria-label': 'Elegir foto' }),
   };
+  const canFeature = S.capabilities.features.includes('destacados');
   let newFile = null; let removeImage = false;
   const prev = h('div', { class: 'img-prev' }, p?.image_url ? h('img', { src: p.image_url, alt: '' }) : 'Sin foto');
   const err = h('div', { class: 'form-error hidden', role: 'alert' });
@@ -251,6 +258,7 @@ function productDialog(p, categoryId) {
       ev.preventDefault(); btn.disabled = true; err.classList.add('hidden'); Object.values(fe).forEach((e) => e.classList.add('hidden'));
       try {
         const body = { name: f.name.value, description: f.desc.value, price_ars: f.price.value.replace(/\./g, '').replace(',', '.'), category_id: f.cat.value, available: f.avail.checked };
+        if (canFeature || p?.featured) body.featured = canFeature ? f.feat.checked : false;
         const saved = p ? (await api(`/owner/products/${p.id}`, { method: 'PATCH', body })).product : (await api('/owner/products', { method: 'POST', body })).product;
         if (newFile) await api(`/owner/products/${saved.id}/image`, { method: 'POST', raw: newFile, type: newFile.type });
         else if (removeImage && p?.image_url) await api(`/owner/products/${saved.id}/image`, { method: 'DELETE' });
@@ -271,7 +279,8 @@ function productDialog(p, categoryId) {
         h('button', { class: 'btn small', type: 'button', onclick: () => f.file.click() }, 'Elegir foto'), f.file,
         (p?.image_url) && h('button', { class: 'btn small danger ml', type: 'button', onclick: () => { removeImage = true; newFile = null; f.file.value = ''; prev.replaceChildren('Sin foto'); } }, 'Quitar foto'),
         h('p', { class: 'hint' }, 'JPG, PNG o WebP. Hasta 2 MB.'))),
-      h('label', { class: 'check', for: 'f-av' }, f.avail, 'Disponible (si lo desmarcás se muestra como “Agotado”)'), err,
+      h('label', { class: 'check', for: 'f-av' }, f.avail, 'Disponible (si lo desmarcás se muestra como “Agotado”)'),
+      canFeature ? h('label', { class: 'check', for: 'f-ft' }, f.feat, 'Producto destacado (aparece arriba, en “Destacados”)') : h('p', { class: 'lock-note' }, 'Destacados: disponible desde el plan Profesional.'), err,
       h('div', { class: 'actions' }, btn, h('button', { class: 'btn', type: 'button', onclick: () => d.close() }, 'Cancelar'))));
   d.addEventListener('close', () => { if (urlToRevoke) URL.revokeObjectURL(urlToRevoke); });
   f.name.focus();

@@ -112,6 +112,9 @@ export function validateProductInput(b, { partial = false } = {}) {
   if (b.available !== undefined) {
     typeof b.available === 'boolean' ? (out.available = b.available) : (errors.available = 'Valor inválido.');
   }
+  if (b.featured !== undefined) {
+    typeof b.featured === 'boolean' ? (out.featured = b.featured) : (errors.featured = 'Valor inválido.');
+  }
   if (!partial || b.category_id !== undefined) {
     isUuid(b.category_id) ? (out.category_id = b.category_id) : (errors.category_id = 'Elegí una categoría.');
   }
@@ -127,6 +130,37 @@ export function validateSettingsInput(b) {
   if (b.description !== undefined) {
     const v = str(b.description, { max: 500 });
     v === null ? (errors.description = 'La descripción puede tener hasta 500 caracteres.') : (out.description = v);
+  }
+  if (b.whatsapp !== undefined) {
+    const w = normalizeWhatsapp(b.whatsapp);
+    w === undefined ? (errors.whatsapp = 'Ingresá el número con código de país y sin el 0 ni el 15 (por ejemplo 5491122334455).') : (out.whatsapp = w);
+  }
+  return { ok: Object.keys(errors).length === 0, errors, value: out };
+}
+
+// Acepta "+54 9 11 2233-4455" → "5491122334455". Vacío → null. Inválido → undefined.
+export function normalizeWhatsapp(v) {
+  if (v === null || v === '') return null;
+  if (typeof v !== 'string') return undefined;
+  const t = v.trim();
+  if (t === '') return null;
+  if (!/^\+?[0-9\s().-]+$/.test(t)) return undefined;
+  const d = t.replace(/\D/g, '');
+  return /^[0-9]{8,15}$/.test(d) ? d : undefined;
+}
+
+export function validatePromotionInput(b, { partial = false } = {}) {
+  const errors = {}; const out = {};
+  if (!partial || b.title !== undefined) {
+    const v = str(b.title, { min: 1, max: 60 });
+    v === null ? (errors.title = 'El título debe tener entre 1 y 60 caracteres.') : (out.title = v);
+  }
+  if (b.description !== undefined) {
+    const v = str(b.description, { max: 200 });
+    v === null ? (errors.description = 'La descripción puede tener hasta 200 caracteres.') : (out.description = v);
+  }
+  if (b.active !== undefined) {
+    typeof b.active === 'boolean' ? (out.active = b.active) : (errors.active = 'Valor inválido.');
   }
   return { ok: Object.keys(errors).length === 0, errors, value: out };
 }
