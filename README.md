@@ -42,4 +42,12 @@ Todo lo que depende de servicios reales: RLS en Supabase real, formato exacto de
 4. **Desplegar:** subí los archivos nuevos a GitHub; Cloudflare despliega solo. No hay variables nuevas.
 5. **Probar:** entrá a `/panel/` con la cuenta de un propietario de prueba, creá una categoría y un producto con foto, mirá la *Vista previa*, tocá *Publicar cambios* y abrí `/<direccion-del-local>`.
 
-   
+## Etapa 3 (segunda tanda): diseño y código QR — cómo activarla
+
+1. En Supabase → SQL Editor, pegá y ejecutá `supabase/migrations/0003_diseno.sql` (agrega `design` y `cover_path` y actualiza `publish_menu`). Debe decir "Success".
+2. Subí los archivos a GitHub (rama `main`) y esperá el deploy nuevo en Cloudflare. **No uses "Retry deployment" en deploys viejos.**
+3. En el panel aparecen las pestañas **Menú · Diseño · Código QR**.
+
+Qué se aplica en el servidor (probado con tests automáticos): plantillas por plan, colores/tipografía/tarjetas/portada solo Profesional+, contraste mínimo, saneo al bajar de plan, limpieza de portadas reemplazadas.
+Qué NO puede imponer el servidor: los colores y el texto del QR se dibujan en el navegador; el plan solo se refleja en la interfaz. El QR en sí solo contiene la URL pública.
+Sin verificar por mí: el aspecto visual real en navegador, `0003_diseno.sql` en Postgres real, y el escaneo con tu celular.

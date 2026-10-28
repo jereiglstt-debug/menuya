@@ -3,6 +3,8 @@
 // aquí solo se refleja lo que el servidor ya permite.
 import { h, money, toast, createSession } from '/shared/core.js';
 import { renderMenu } from '/menu/render.js';
+import { designTab } from '/panel/diseno.js';
+import { qrTab } from '/panel/qrtab.js';
 
 const $app = document.getElementById('app');
 const PLAN = { basico: 'Básico', profesional: 'Profesional', premium: 'Premium' };
@@ -18,6 +20,8 @@ if (!cfg.supabaseUrl) {
 const session = createSession(cfg, 'owner-sess', (msg) => renderLogin(msg));
 const api = session.api;
 let S = null;
+let TAB = 'menu';
+const TABS = [['menu', 'Menú'], ['diseno', 'Diseño'], ['qr', 'Código QR']];
 
 // ---------- login ----------
 function renderLogin(msg) {
@@ -132,7 +136,11 @@ function render() {
       h('div', { class: 'who' },
         published && h('a', { class: 'btn small', href: `/${S.restaurant.slug}`, target: '_blank', rel: 'noopener' }, 'Ver menú público'),
         h('button', { class: 'btn small', onclick: () => { session.logout(); renderLogin(); } }, 'Salir'))),
-    h('main', { class: 'wrap' }, statusBar, businessCard(), menuSection()));
+    h('main', { class: 'wrap' }, statusBar,
+      h('div', { class: 'tabs', role: 'tablist' }, TABS.map(([k, l]) => h('button', { role: 'tab', 'aria-selected': String(TAB === k), class: `tab${TAB === k ? ' on' : ''}`, onclick: () => { TAB = k; render(); } }, l))),
+      TAB === 'menu' ? [businessCard(), menuSection()]
+        : TAB === 'diseno' ? designTab({ S, api, act, toast, checkFile, IMG_TYPES, confirmDlg })
+        : qrTab({ S })));
 }
 
 async function doPublish(btn) {

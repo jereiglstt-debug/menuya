@@ -12,7 +12,10 @@ try {
   else {
     const data = await res.json();
     document.title = data.title;
-    root.replaceChildren(renderMenu(data));
+    const el = renderMenu(data);
+    root.replaceChildren(el);
+    // El fondo del diseño cubre toda la pantalla, no solo la columna del menú.
+    document.documentElement.style.setProperty('background', el.style.getPropertyValue('--m-bg'));
   }
 } catch {
   msg('Sin conexión', 'Revisá tu conexión a internet y volvé a intentar.');

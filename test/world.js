@@ -39,7 +39,7 @@ export function makeWorld() {
       if (!prods.length) return reply({ code: 'P0001', message: 'Agregá al menos un producto antes de publicar.' }, 400);
       const s = t.menu_settings.find((x) => x.restaurant_id === r.id);
       const snapshot = {
-        title: s?.title || r.name, description: s?.description || r.description, logo_path: s?.logo_path ?? null,
+        title: s?.title || r.name, description: s?.description || r.description, logo_path: s?.logo_path ?? null, cover_path: s?.cover_path ?? null, design: s?.design ?? {},
         categories: sorted(t.categories.filter((c) => c.restaurant_id === r.id), 'position.asc')
           .filter((c) => prods.some((p) => p.category_id === c.id))
           .map((c) => ({ id: c.id, name: c.name, products: sorted(prods.filter((p) => p.category_id === c.id), 'position.asc').map(({ id, name, description, price_ars, image_path, available }) => ({ id, name, description, price_ars, image_path, available })) })),

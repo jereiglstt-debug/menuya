@@ -3,7 +3,8 @@
 // "no existe" para quien lo pide (404), nunca se lee ni se modifica.
 import { HttpError, readJson, json } from '../lib/http.js';
 import { requireOwner } from '../lib/auth.js';
-import { requireFeature } from '../lib/plans.js';
+import { requireFeature, designPermissions, featuresFor } from '../lib/plans.js';
+import { validateDesign, sanitizeDesign } from '../../public/shared/design.js';
 import { readImage, newImagePath } from '../lib/images.js';
 import {
   isUuid, validateCategoryInput, validateProductInput, validateSettingsInput, validateIdList,
@@ -30,11 +31,12 @@ async function queueImage(db, rid, path) {
   catch (e) { if (e.status !== 409) throw e; }
 }
 async function ensureSettings(db, r) {
-  const rows = await db.rest('menu_settings', { query: { select: 'title,description,logo_path', restaurant_id: `eq.${r.id}` } });
+  const rows = await db.rest('menu_settings', { query: { select: 'title,description,logo_path,cover_path,design', restaurant_id: `eq.${r.id}` } });
   if (rows.length) return rows[0];
   const [row] = await db.rest('menu_settings', { method: 'POST', returning: true, body: { restaurant_id: r.id, title: r.name, description: r.description ?? '' } });
   return row;
 }
+const hasCover = (r) => designPermissions(r.plan).advanced;
 const withUrl = (db, p) => ({ ...p, image_url: db.publicUrl(p.image_path) });
 
 // ---------------- lectura ----------------
@@ -53,6 +55,9 @@ export async function getMenu({ request, db }) {
   return json({
     restaurant: { name: r.name, slug: r.slug, plan: r.plan },
     settings: { title: settings.title, description: settings.description, logo_url: db.publicUrl(settings.logo_path) },
+    design: sanitizeDesign(settings.design, designPermissions(r.plan)),
+    cover_url: hasCover(r) ? db.publicUrl(settings.cover_path) : null,
+    capabilities: { design: designPermissions(r.plan), features: featuresFor(r.plan) },
     categories: cats.map((c) => ({ ...c, products: prods.filter((p) => p.category_id === c.id).map((p) => withUrl(db, p)) })),
     status: { version: last?.version ?? null, last_published_at: last?.published_at ?? null, unpublished_changes: unpublished },
   });
@@ -217,6 +222,39 @@ export async function updateSettings({ request, db }) {
   return json({ ok: true });
 }
 
+// ---------------- diseño y portada ----------------
+export async function updateDesign({ request, db }) {
+  const { restaurant: r } = await ctx(request, db);
+  await ensureSettings(db, r);
+  const v = validateDesign(await readJson(request), designPermissions(r.plan));
+  if (v.forbidden.length) throw new HttpError(403, 'Tu plan actual no incluye esta función.', { forbidden: v.forbidden });
+  if (!v.ok) throw new HttpError(400, 'Revisá los datos.', v.errors);
+  await db.rest('menu_settings', { method: 'PATCH', query: { restaurant_id: `eq.${r.id}` }, body: { design: v.value } });
+  return json({ design: sanitizeDesign(v.value, designPermissions(r.plan)) });
+}
+
+export async function uploadCover({ request, db }) {
+  const { restaurant: r } = await ctx(request, db);
+  requireFeature(r, 'personalizacion_avanzada');
+  const s = await ensureSettings(db, r);
+  const img = await readImage(request);
+  const path = newImagePath(r.id, img.ext);
+  await db.storageUpload(path, img.bytes, img.type);
+  try {
+    await db.rest('menu_settings', { method: 'PATCH', query: { restaurant_id: `eq.${r.id}` }, body: { cover_path: path } });
+    await queueImage(db, r.id, s.cover_path);
+    return json({ cover_url: db.publicUrl(path) });
+  } catch (e) { await db.storageDelete([path]).catch(() => {}); throw e; }
+}
+
+export async function deleteCover({ request, db }) {
+  const { restaurant: r } = await ctx(request, db);
+  const s = await ensureSettings(db, r);
+  await db.rest('menu_settings', { method: 'PATCH', query: { restaurant_id: `eq.${r.id}` }, body: { cover_path: null } });
+  await queueImage(db, r.id, s.cover_path);
+  return json({ ok: true });
+}
+
 // ---------------- vista previa y publicación ----------------
 // Misma forma que el menú público, pero armada desde el BORRADOR.
 export async function preview({ request, db }) {
@@ -228,6 +266,8 @@ export async function preview({ request, db }) {
   ]);
   return json({
     title: s.title || r.name, description: s.description || r.description || '', logo_url: db.publicUrl(s.logo_path),
+    design: sanitizeDesign(s.design, designPermissions(r.plan)),
+    cover_url: hasCover(r) ? db.publicUrl(s.cover_path) : null,
     categories: cats.map((c) => ({ name: c.name, products: prods.filter((p) => p.category_id === c.id).map((p) => ({
       name: p.name, description: p.description, price_ars: p.price_ars, available: p.available, image_url: db.publicUrl(p.image_path) })) })),
   });
@@ -238,10 +278,11 @@ async function cleanupImages(db, rid) {
   if (!pending.length) return;
   const refs = new Set();
   (await db.rest('products', { query: { select: 'image_path', restaurant_id: `eq.${rid}` } })).forEach((p) => p.image_path && refs.add(p.image_path));
-  (await db.rest('menu_settings', { query: { select: 'logo_path', restaurant_id: `eq.${rid}` } })).forEach((s) => s.logo_path && refs.add(s.logo_path));
+  (await db.rest('menu_settings', { query: { select: 'logo_path,cover_path', restaurant_id: `eq.${rid}` } })).forEach((s) => { if (s.logo_path) refs.add(s.logo_path); if (s.cover_path) refs.add(s.cover_path); });
   const [v] = await db.rest('menu_versions', { query: { select: 'snapshot', restaurant_id: `eq.${rid}`, order: 'version.desc', limit: '1' } });
   if (v) {
     if (v.snapshot.logo_path) refs.add(v.snapshot.logo_path);
+    if (v.snapshot.cover_path) refs.add(v.snapshot.cover_path);
     for (const c of v.snapshot.categories) for (const p of c.products) if (p.image_path) refs.add(p.image_path);
   }
   // Solo se borra lo que ya nadie usa y que pertenece a este restaurante.

@@ -2,6 +2,7 @@
 // del servidor debe pasar por requireFeature(); la interfaz solo refleja
 // lo que el servidor ya decidió.
 import { HttpError } from './http.js';
+import { permissionsFor } from '../../public/shared/design.js';
 
 export const PLANS = ['basico', 'profesional', 'premium'];
 const RANK = { basico: 1, profesional: 2, premium: 3 };
@@ -52,4 +53,12 @@ export function requireFeature(restaurant, feature) {
   if (!hasFeature(restaurant?.plan, feature)) {
     throw new HttpError(403, 'Tu plan actual no incluye esta función.', { feature });
   }
+}
+
+// Permisos de diseño derivados del plan (el servidor es quien decide).
+export function designPermissions(plan) {
+  return permissionsFor({
+    extraTemplates: hasFeature(plan, 'plantillas_extra'),
+    advanced: hasFeature(plan, 'personalizacion_avanzada'),
+  });
 }
