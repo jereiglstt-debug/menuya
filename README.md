@@ -51,3 +51,4 @@ Todo lo que depende de servicios reales: RLS en Supabase real, formato exacto de
 Qué se aplica en el servidor (probado con tests automáticos): plantillas por plan, colores/tipografía/tarjetas/portada solo Profesional+, contraste mínimo, saneo al bajar de plan, limpieza de portadas reemplazadas.
 Qué NO puede imponer el servidor: los colores y el texto del QR se dibujan en el navegador; el plan solo se refleja en la interfaz. El QR en sí solo contiene la URL pública.
 Sin verificar por mí: el aspecto visual real en navegador, `0003_diseno.sql` en Postgres real, y el escaneo con tu celular.
+
