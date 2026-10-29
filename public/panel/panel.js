@@ -6,6 +6,7 @@ import { renderMenu } from '/menu/render.js';
 import { designTab } from '/panel/diseno.js';
 import { qrTab } from '/panel/qrtab.js';
 import { promosTab } from '/panel/promos.js';
+import { pedidosTab, startOrderAlerts, stopOrderAlerts } from '/panel/pedidos.js';
 
 const $app = document.getElementById('app');
 const PLAN = { basico: 'Básico', profesional: 'Profesional', premium: 'Premium' };
@@ -22,10 +23,12 @@ const session = createSession(cfg, 'owner-sess', (msg) => renderLogin(msg));
 const api = session.api;
 let S = null;
 let TAB = 'menu';
-const TABS = [['menu', 'Menú'], ['promos', 'Promociones'], ['diseno', 'Diseño'], ['qr', 'Código QR']];
+let NEW_ORDERS = 0;
+const TABS = [['menu', 'Menú'], ['pedidos', 'Pedidos'], ['promos', 'Promociones'], ['diseno', 'Diseño'], ['qr', 'Código QR']];
 
 // ---------- login ----------
 function renderLogin(msg) {
+  stopOrderAlerts(); NEW_ORDERS = 0;
   const err = h('div', { class: `form-error ${msg ? '' : 'hidden'}`, role: 'alert' }, msg);
   const email = h('input', { id: 'e', type: 'email', autocomplete: 'username', required: true });
   const pw = h('input', { id: 'p', type: 'password', autocomplete: 'current-password', required: true });
@@ -44,12 +47,18 @@ function renderLogin(msg) {
 
 // ---------- carga ----------
 async function boot() {
-  try { S = await api('/owner/menu'); render(); }
+  try { S = await api('/owner/menu'); render(); startAlerts(); }
   catch (e) {
     if (e.message === 'sesión') return;
     if (e.status === 403) { session.logout(); return renderLogin(e.message); }
     $app.replaceChildren(h('p', { class: 'empty' }, `No se pudo cargar tu menú: ${e.message}`));
   }
+}
+const tabLabel = (k, l) => (k === 'pedidos' && NEW_ORDERS ? `${l} (${NEW_ORDERS})` : l);
+function startAlerts() {
+  if (S?.capabilities.features.includes('pedidos_nativos')) startOrderAlerts(api, (n) => {
+    NEW_ORDERS = n; const b = document.querySelector('.tab[data-k=pedidos]'); if (b) b.textContent = tabLabel('pedidos', 'Pedidos');
+  });
 }
 async function reload() { S = await api('/owner/menu'); render(); }
 // Ejecuta una acción y recarga; los errores se muestran, nunca se tragan.
@@ -136,13 +145,14 @@ function render() {
       h('div', {}, h('strong', {}, S.restaurant.name), ' ', h('span', { class: 'badge b-activo' }, `Plan ${PLAN[S.restaurant.plan]}`)),
       h('div', { class: 'who' },
         published && h('a', { class: 'btn small', href: `/${S.restaurant.slug}`, target: '_blank', rel: 'noopener' }, 'Ver menú público'),
-        h('button', { class: 'btn small', onclick: () => { session.logout(); renderLogin(); } }, 'Salir'))),
+        h('button', { class: 'btn small', onclick: () => { stopOrderAlerts(); NEW_ORDERS = 0; session.logout(); renderLogin(); } }, 'Salir'))),
     h('main', { class: 'wrap' }, statusBar,
-      h('div', { class: 'tabs', role: 'tablist' }, TABS.map(([k, l]) => h('button', { role: 'tab', 'aria-selected': String(TAB === k), class: `tab${TAB === k ? ' on' : ''}`, onclick: () => { TAB = k; render(); } }, l))),
+      h('div', { class: 'tabs', role: 'tablist' }, TABS.map(([k, l]) => h('button', { role: 'tab', 'aria-selected': String(TAB === k), class: `tab${TAB === k ? ' on' : ''}`, 'data-k': k, onclick: () => { TAB = k; render(); } }, tabLabel(k, l)))),
       TAB === 'menu' ? [businessCard(), menuSection()]
+        : TAB === 'pedidos' ? pedidosTab({ S, api, confirmDlg, inputDlg })
         : TAB === 'promos' ? promosTab({ S, api, act, confirmDlg })
         : TAB === 'diseno' ? designTab({ S, api, act, toast, checkFile, IMG_TYPES, confirmDlg })
-        : qrTab({ S })));
+        : qrTab({ S, api })));
 }
 
 async function doPublish(btn) {

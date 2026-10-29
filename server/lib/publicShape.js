@@ -6,7 +6,8 @@
 import { hasFeature, designPermissions } from './plans.js';
 import { sanitizeDesign } from '../../public/shared/design.js';
 
-export function publicShape(src, plan, db) {
+export function publicShape(src, plan, db, opts = {}) {
+  const ordering = opts.ordering || null; // solo Premium con pedidos; trae ids de producto
   const perms = designPermissions(plan);
   const featured = hasFeature(plan, 'destacados');
   return {
@@ -15,11 +16,14 @@ export function publicShape(src, plan, db) {
     cover_url: perms.advanced ? db.publicUrl(src.cover_path) : null,
     design: sanitizeDesign(src.design, perms),
     whatsapp: hasFeature(plan, 'whatsapp_mensaje') ? (src.whatsapp || null) : null,
+    ordering,
+    ...(opts.preview ? { preview: true } : {}),
     cart: hasFeature(plan, 'carrito') && hasFeature(plan, 'whatsapp_mensaje') && !!src.whatsapp,
     promotions: hasFeature(plan, 'promociones') ? (src.promotions || []).map((p) => ({ title: p.title, description: p.description })) : [],
     categories: src.categories.map((c) => ({
       name: c.name,
       products: c.products.map((p) => ({
+        ...(ordering ? { id: p.id } : {}),
         name: p.name, description: p.description, price_ars: p.price_ars, available: p.available,
         featured: featured && !!p.featured, image_url: db.publicUrl(p.image_path),
       })),

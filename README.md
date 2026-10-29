@@ -69,3 +69,38 @@ Importante y honesto: el carrito **no crea pedidos** en la plataforma. Arma un t
 Las promociones no cambian precios (son banners de texto) y se ordenan por antigüedad.
 
 Cómo se probó: tests automáticos (`npm test`), más `node test/e2e/navegador.mjs` (Chromium real, CSP de producción, servidor simulado). No verificado: `0004` en Postgres real, ni que WhatsApp abra bien en tu celular.
+
+## Etapa 4 (segunda tanda): pedidos nativos — Plan Premium — cómo activarla
+
+1. En Supabase → SQL Editor ejecutá `supabase/migrations/0005_pedidos.sql` (Success).
+2. **Verificación real de la base (recomendado):** pegá `supabase/tests/pedidos.sql` en el SQL Editor. Debe terminar en `PEDIDOS OK`. (Se deshace solo; no deja datos.) Si da error, copiame el mensaje.
+3. Subí los archivos a GitHub (`main`) y esperá el deploy nuevo (sin "Retry deployment" en deploys viejos).
+4. En el panel de un restaurante **Premium**: pestaña **Pedidos → Mesas** (crear), **Ajustes** (tipos de pedido, envío, medios de pago) y botón **Abrir** arriba. Los QR por mesa se descargan en **Código QR**.
+
+### Qué hace
+- Cliente: arma el pedido en el menú, elige **Mesa** (solo si entró por el QR de una mesa), **Take Away** o **Delivery**, y sigue el estado en su pantalla (se actualiza cada 10 s).
+- Dueño: **cola** de pedidos (nuevo → en preparación → listo → entregado, o cancelado), historial de estados, **mesas**, **estado abierto / pausado / cerrado**, **estadísticas básicas** (pedidos, entregados, ventas entregadas, ticket promedio, por tipo, por día, productos más pedidos).
+- Avisos de pedido nuevo: **solo dentro del panel y mientras esté abierto** (consulta cada 15 s; insignia en la pestaña, aviso y sonido opcional).
+
+### Reglas que aplica el servidor (probadas con tests automáticos)
+- Solo Premium crea o recibe pedidos; si un local baja de plan, deja de aceptarlos y desaparece del menú.
+- **Los precios salen del menú PUBLICADO**, no del navegador. Productos agotados o que ya no existen se rechazan.
+- Estado del local: `cerrado` (por defecto) o `pausado` → 409; el menú se sigue viendo.
+- Mesa: debe ser una mesa activa del mismo local. Las mesas con pedidos no se borran, se **archivan** (su QR deja de funcionar).
+- Transiciones de estado válidas (no se salta pasos; entregado y cancelado son finales), validadas también en la base.
+- El seguimiento se consulta con un código largo y aleatorio y **no devuelve nombre, teléfono ni dirección**.
+- Aislamiento entre locales: todo se filtra por el restaurante de la sesión; ids ajenos dan 404.
+
+### Lo que NO hace (dicho con honestidad)
+- **No cobra online.** El pago es en el local o al recibir (efectivo, transferencia o tarjeta presencial); la plataforma solo registra qué eligió el cliente.
+- **No envía avisos por WhatsApp.** La notificación automática por WhatsApp exige la API oficial de WhatsApp Business (con aprobación y costo de Meta); no es gratis, así que no la implementé ni la muestro como si existiera. El plan lista `notificaciones_whatsapp` pero no tiene función detrás.
+- **Anti-abuso básico, no antifraude:** campo trampa, tope de 3 pedidos pendientes por teléfono/mesa y 100 por local. Para más protección recomiendo una regla de *Rate Limiting* en Cloudflare para `/api/public/orders/*`.
+- **Datos personales:** los pedidos guardan nombre, teléfono y dirección del cliente. Todavía no hay borrado automático por antigüedad; hay que definir un plazo (por ejemplo 90 días) y agregarlo. Decisión pendiente tuya.
+- El estado del cliente se actualiza consultando cada 10 s (no hay conexión en tiempo real).
+- Los días de las estadísticas se agrupan en horario de Argentina.
+
+### Cómo se probó
+- `npm test`: automáticos con una base simulada en memoria (las funciones SQL reimplementadas en JS).
+- `node test/e2e/navegador.mjs`: Chromium real contra el servidor simulado, con el CSP de producción: pedido del cliente, errores por campo, cola con aviso por sondeo, cambio de estado, seguimiento, pausa, mesas, QR por mesa, estadísticas.
+- QR de mesa decodificado con OpenCV.
+- **No verificado por mí:** `0005_pedidos.sql` y `pedidos.sql` en un Postgres real (los corrés vos), el comportamiento en celulares reales, y la carga con muchos pedidos.

@@ -4,7 +4,7 @@
 import { h } from '/shared/core.js';
 import { drawQr, qrColorsError } from '/shared/qrdraw.js';
 
-export function qrTab({ S }) {
+export function qrTab({ S, api }) {
   const url = `${location.origin}/${S.restaurant.slug}`;
   const custom = !!S.capabilities.features.qr_personalizado;
   const st = { fg: '#000000', bg: '#ffffff', label: '' };
@@ -38,5 +38,24 @@ export function qrTab({ S }) {
     !S.status.version && h('p', { class: 'hint' }, 'Todavía no publicaste tu menú: hasta entonces, quien escanee verá “menú no disponible”.'),
     h('div', { class: 'qr-wrap' }, canvas), opts, err,
     h('p', { class: 'hint' }, 'Probá escanearlo con tu celular antes de imprimirlo en cantidad. Imprimilo de al menos 3 × 3 cm.'),
-    h('div', { class: 'actions' }, dl));
+    h('div', { class: 'actions' }, dl),
+    S.capabilities.features.includes('mesas_y_qr_mesa') && tablesQr(S, api));
+}
+
+// Un QR por mesa (Plan Premium): al escanearlo, el pedido queda asociado a esa mesa.
+function tablesQr(S, api) {
+  const box = h('div', { class: 'qr-tables' }, h('p', { class: 'hint' }, 'Cargando mesas…'));
+  api('/owner/ordering').then(({ tables }) => {
+    const act = tables.filter((t) => t.active);
+    box.replaceChildren(...(act.length ? act.map((t) => {
+      const c = h('canvas', { class: 'qr-canvas small', role: 'img', 'aria-label': `QR de ${t.label}` });
+      drawQr(c, `${location.origin}/${S.restaurant.slug}?mesa=${t.id}`, { label: t.label });
+      return h('div', { class: 'qr-table' }, c, h('button', { class: 'btn small', onclick: () => c.toBlob((b) => {
+        const a = h('a', { href: URL.createObjectURL(b), download: `qr-${S.restaurant.slug}-${t.label.replace(/[^a-z0-9]+/gi, '-')}.png` });
+        document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+      }, 'image/png') }, `Descargar ${t.label}`));
+    }) : [h('p', { class: 'hint' }, 'Todavía no tenés mesas. Creálas en Pedidos → Mesas.')]));
+  }).catch(() => box.replaceChildren(h('p', { class: 'hint' }, 'No se pudieron cargar las mesas.')));
+  return h('div', { class: 'qr-tables-wrap' }, h('h3', {}, 'QR por mesa'),
+    h('p', { class: 'muted' }, 'Cada mesa tiene su propio código. Imprimilos y ponelos en la mesa correspondiente.'), box);
 }

@@ -6,7 +6,8 @@ const slug = location.pathname.replace(/^\/+|\/+$/g, '');
 const msg = (t, d) => root.replaceChildren(h('main', { class: 'm-msg' }, h('h1', {}, t), h('p', {}, d)));
 
 try {
-  const res = await fetch(`/api/public/menu/${encodeURIComponent(slug)}`);
+  const mesa = new URLSearchParams(location.search).get('mesa'); // QR de mesa
+  const res = await fetch(`/api/public/menu/${encodeURIComponent(slug)}${mesa ? `?mesa=${encodeURIComponent(mesa)}` : ''}`);
   if (res.status === 404) msg('Menú no disponible', 'Este menú no existe o todavía no fue publicado.');
   else if (!res.ok) msg('No pudimos cargar el menú', 'Probá de nuevo en unos minutos.');
   else {

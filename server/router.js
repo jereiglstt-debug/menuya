@@ -4,6 +4,8 @@ import * as admin from './handlers/admin.js';
 import * as pub from './handlers/public.js';
 import * as owner from './handlers/owner.js';
 import { publicMenu } from './handlers/publicMenu.js';
+import * as pubOrders from './handlers/publicOrders.js';
+import * as ord from './handlers/orders.js';
 
 const ROUTES = [
   ['GET',   /^\/config$/,                          pub.config, false],
@@ -18,6 +20,17 @@ const ROUTES = [
   ['GET',   /^\/admin\/audit$/,                    admin.listAudit],
 
   ['GET',    /^\/public\/menu\/([^/]+)$/,            publicMenu],
+  ['POST',   /^\/public\/orders\/([^/]+)$/,          pubOrders.createOrder],
+  ['GET',    /^\/public\/orders\/([^/]+)\/([^/]+)$/, pubOrders.trackOrder],
+
+  ['GET',    /^\/owner\/ordering$/,                  ord.getOrdering],
+  ['PATCH',  /^\/owner\/ordering$/,                  ord.updateOrdering],
+  ['POST',   /^\/owner\/tables$/,                    ord.createTables],
+  ['PATCH',  /^\/owner\/tables\/([^/]+)$/,           ord.updateTable],
+  ['DELETE', /^\/owner\/tables\/([^/]+)$/,           ord.deleteTable],
+  ['GET',    /^\/owner\/orders$/,                    ord.listOrders],
+  ['PATCH',  /^\/owner\/orders\/([^/]+)\/status$/,   ord.setOrderStatus],
+  ['GET',    /^\/owner\/stats$/,                     ord.stats],
 
   ['GET',    /^\/owner\/menu$/,                      owner.getMenu],
   ['GET',    /^\/owner\/preview$/,                   owner.preview],
@@ -54,7 +67,7 @@ export async function handle(request, env, fetchImpl = fetch) {
       pathMatched = true;
       if (request.method !== method) continue;
       const db = needsDb ? createDb(env, fetchImpl) : null;
-      return await handler({ request, env, db, params: { id: m[1] } });
+      return await handler({ request, env, db, params: { id: m[1], id2: m[2] } });
     }
     throw new HttpError(pathMatched ? 405 : 404, pathMatched ? 'Método no permitido.' : 'No encontrado.');
   } catch (err) {

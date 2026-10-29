@@ -3,6 +3,7 @@
 // que verán los clientes.
 import { h, money } from '/shared/core.js';
 import { resolveDesign, FONTS, fontHref, textOn } from '/shared/design.js';
+import { openOrderForm, openTracking, savedOrder } from '/menu/pedido.js';
 import { waLink, inquiryMessage, orderMessage, orderTotal, MAX_QTY, MAX_LINES, MAX_URL } from '/shared/whatsapp.js';
 
 // Carga la tipografía elegida (una sola vez por fuente).
@@ -23,7 +24,10 @@ function applyDesign(el, raw) {
 
 export function renderMenu(d) {
   const cats = d.categories.filter((c) => c.products.length);
-  const cartOn = !!d.cart && !!d.whatsapp;
+  const ord = d.ordering || null; // pedidos nativos (Premium)
+  const mode = ord ? (ord.state === 'abierto' ? 'native' : 'none') : (d.cart && d.whatsapp ? 'wa' : 'none');
+  const cartOn = mode !== 'none';
+  const barOn = cartOn || !!ord; // con pedidos nativos, el seguimiento sigue disponible aunque el local pause
   const cart = new Map(); // clave de producto -> { name, price_ars, qty }
   const bar = h('div', { class: 'm-bar hidden' });
   const dlg = h('dialog', { class: 'm-cart', 'aria-label': 'Tu pedido' });
@@ -31,18 +35,29 @@ export function renderMenu(d) {
   const items = () => [...cart.values()];
   const count = () => items().reduce((s, i) => s + i.qty, 0);
   function refreshBar() {
-    if (!cartOn) return;
-    bar.classList.toggle('hidden', cart.size === 0);
+    if (!barOn) return;
+    const saved = ord ? savedOrder(d.slug) : null;
+    bar.classList.toggle('hidden', cart.size === 0 && !saved);
+    if (cart.size === 0 && saved) { bar.replaceChildren(h('button', { class: 'm-btn alt', onclick: showTracking }, `Ver el estado de mi pedido #${saved.number}`)); return; }
     bar.replaceChildren(h('button', { class: 'm-btn', onclick: openCart }, `Ver mi pedido · ${count()} ${count() === 1 ? 'producto' : 'productos'} · ${money(orderTotal(items()))}`));
+  }
+  function showTracking() {
+    openTracking({ dlg, slug: d.slug, onNew: () => { dlg.close(); refreshBar(); } });
+    if (!dlg.open) dlg.showModal();
   }
   function add(key, p) {
     const cur = cart.get(key);
     if (cur) { if (cur.qty >= MAX_QTY) return; cur.qty += 1; }
     else if (cart.size >= MAX_LINES) return;
-    else cart.set(key, { name: p.name, price_ars: p.price_ars, qty: 1 });
+    else cart.set(key, { id: p.id, name: p.name, price_ars: p.price_ars, qty: 1 });
     refreshBar();
   }
   function openCart() {
+    if (mode === 'native') {
+      openOrderForm({ dlg, d, ord, cart, paint: refreshBar, onPlaced: () => { showTracking(); refreshBar(); } });
+      if (cart.size && !dlg.open) dlg.showModal();
+      return;
+    }
     const customer = h('input', { id: 'm-cust', maxlength: '60', autocomplete: 'name' });
     const note = h('textarea', { id: 'm-note', maxlength: '300', rows: '2' });
     const list = h('ul', { class: 'm-cart-list' });
@@ -108,9 +123,11 @@ export function renderMenu(d) {
       h('h2', {}, c.name),
       h('ul', { class: 'm-list' }, c.products.map((p, pi) => item(p, `${ci}:${pi}`))))),
     !cats.length && h('p', { class: 'm-empty' }, 'Todavía no hay productos para mostrar.'),
-    cartOn && bar, cartOn && dlg,
-    !cartOn && d.whatsapp && h('div', { class: 'm-bar' },
+    barOn && bar, barOn && dlg,
+    ord && ord.state !== 'abierto' && h('div', { class: 'm-closed', role: 'status' }, ord.state === 'pausado' ? 'Los pedidos están pausados por un momento. Podés ver el menú igual.' : 'Ahora no estamos recibiendo pedidos. Podés ver el menú igual.'),
+    !cartOn && !ord && d.whatsapp && h('div', { class: 'm-bar' },
       h('a', { class: 'm-btn', href: waLink(d.whatsapp, inquiryMessage(d.title)), target: '_blank', rel: 'noopener noreferrer' }, 'Consultar por WhatsApp')));
+  refreshBar();
   applyDesign(root, d.design);
   return root;
 }
