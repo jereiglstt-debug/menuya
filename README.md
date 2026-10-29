@@ -75,7 +75,7 @@ Cómo se probó: tests automáticos (`npm test`), más `node test/e2e/navegador.
 1. En Supabase → SQL Editor ejecutá `supabase/migrations/0005_pedidos.sql` (Success).
 2. **Verificación real de la base (recomendado):** pegá `supabase/tests/pedidos.sql` en el SQL Editor. Debe terminar en `PEDIDOS OK`. (Se deshace solo; no deja datos.) Si da error, copiame el mensaje.
 3. Subí los archivos a GitHub (`main`) y esperá el deploy nuevo (sin "Retry deployment" en deploys viejos).
-4. En el panel de un restaurante **Premium**: pestaña **Pedidos → Mesas** (crear), **Ajustes** (tipos de pedido, envío, medios de pago) y botón **Abrir** arriba. Los QR por mesa se descargan en **Código QR**.
+4. En el panel de un restaurante **Premium**: pestaña **Pedidos → Mesas** (crear), **Ajustes** (tipos de pedido y envío; los medios de pago están en la pestaña **Métodos de pago**) y botón **Abrir** arriba. Los QR por mesa se descargan en **Código QR**.
 
 ### Qué hace
 - Cliente: arma el pedido en el menú, elige **Mesa** (solo si entró por el QR de una mesa), **Take Away** o **Delivery**, y sigue el estado en su pantalla (se actualiza cada 10 s).
@@ -92,7 +92,7 @@ Cómo se probó: tests automáticos (`npm test`), más `node test/e2e/navegador.
 - Aislamiento entre locales: todo se filtra por el restaurante de la sesión; ids ajenos dan 404.
 
 ### Lo que NO hace (dicho con honestidad)
-- **No cobra online.** El pago es en el local o al recibir (efectivo, transferencia o tarjeta presencial); la plataforma solo registra qué eligió el cliente.
+- **No cobra online.** El pago es en el local o al recibir (efectivo, débito, crédito o combinado; ver más abajo); la plataforma solo registra qué eligió el cliente.
 - **No envía avisos por WhatsApp.** La notificación automática por WhatsApp exige la API oficial de WhatsApp Business (con aprobación y costo de Meta); no es gratis, así que no la implementé ni la muestro como si existiera. El plan lista `notificaciones_whatsapp` pero no tiene función detrás.
 - **Anti-abuso básico, no antifraude:** campo trampa, tope de 3 pedidos pendientes por teléfono/mesa y 100 por local. Para más protección recomiendo una regla de *Rate Limiting* en Cloudflare para `/api/public/orders/*`.
 - **Datos personales:** los pedidos guardan nombre, teléfono y dirección del cliente. Todavía no hay borrado automático por antigüedad; hay que definir un plazo (por ejemplo 90 días) y agregarlo. Decisión pendiente tuya.
@@ -104,3 +104,20 @@ Cómo se probó: tests automáticos (`npm test`), más `node test/e2e/navegador.
 - `node test/e2e/navegador.mjs`: Chromium real contra el servidor simulado, con el CSP de producción: pedido del cliente, errores por campo, cola con aviso por sondeo, cambio de estado, seguimiento, pausa, mesas, QR por mesa, estadísticas.
 - QR de mesa decodificado con OpenCV.
 - **No verificado por mí:** `0005_pedidos.sql` y `pedidos.sql` en un Postgres real (los corrés vos), el comportamiento en celulares reales, y la carga con muchos pedidos.
+
+
+## Métodos de pago (migración 0006) — todos los planes
+
+1. Ejecutá `supabase/migrations/0006_metodos_pago.sql` en el SQL Editor (después de la 0005).
+2. Volvé a pegar `supabase/tests/pedidos.sql` (ahora también verifica pagos combinados); debe decir `PEDIDOS OK`.
+3. Subí los archivos a GitHub (`main`) y esperá el deploy (sin "Retry deployment" en deploys viejos).
+
+**Qué hace:** nueva pestaña **Métodos de pago** en el panel de **todos** los planes (al final de la barra de pestañas). El local elige entre **Efectivo, Tarjeta de débito, Tarjeta de crédito y Combinado**; si habilita “Combinado” elige **cuáles se pueden combinar** (al menos dos). Es configuración **en vivo**: se aplica al guardar, sin publicar.
+- **Básico y Profesional:** los medios elegidos se muestran al pie del menú público (informativo).
+- **Premium:** además son las opciones que ve el cliente al pedir (por mesa, Take Away o Delivery). Con “Combinado” el cliente marca cuáles usa (mínimo dos, solo entre las habilitadas). En mesa, elegir el pago es opcional (se puede definir al final); en Take Away y Delivery es obligatorio. El servidor valida todo y la cola del dueño muestra, por ejemplo, “Combinado (Efectivo + Tarjeta de débito)”.
+- No cobra online: solo informa y registra la elección.
+
+**Cambios respecto de la versión anterior (importante):** la lista pasó a ser exactamente la que pediste, por lo que **“Transferencia” ya no es una opción**. Lo que había configurado se migra solo: “Tarjeta” pasa a Débito + Crédito, y si un local quedaba sin nada queda en Efectivo. Los pedidos ya hechos conservan su medio original. Si querés sumar Transferencia u otro medio, es un cambio chico.
+Un local que nunca configuró nada: no muestra medios en el menú y, si es Premium, sus pedidos aceptan solo Efectivo hasta que configure.
+
+**Cómo se probó:** tests automáticos (`npm test`: validación, combinaciones, planes, aislamiento, cambios en vivo) y navegador real (`node test/e2e/navegador.mjs`: pestaña en Básico y Premium, error de combinado con menos de dos, pedido por mesa con combinado, y la cola mostrándolo). **No verificado por mí:** la migración 0006 y `pedidos.sql` en un Postgres real.

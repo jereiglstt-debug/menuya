@@ -7,6 +7,7 @@ import { requireFeature, designPermissions, featuresFor } from '../lib/plans.js'
 import { validateDesign, sanitizeDesign } from '../../public/shared/design.js';
 import { publicShape } from '../lib/publicShape.js';
 import { orderingView } from '../lib/orders.js';
+import { paymentsView } from '../lib/payments.js';
 
 const MAX_PROMOS = 10;
 import { readImage, newImagePath } from '../lib/images.js';
@@ -298,17 +299,19 @@ export async function deletePromotion({ request, db, params }) {
 export async function preview({ request, db }) {
   const { restaurant: r } = await ctx(request, db);
   const s = await ensureSettings(db, r);
-  const [cats, prods, promos, [ordRow]] = await Promise.all([
+  const [cats, prods, promos, [ordRow], [payRow]] = await Promise.all([
     db.rest('categories', { query: { select: 'id,name', restaurant_id: `eq.${r.id}`, order: 'position.asc,created_at.asc' } }),
     db.rest('products', { query: { select: PROD_SELECT, restaurant_id: `eq.${r.id}`, order: 'position.asc,created_at.asc' } }),
     db.rest('promotions', { query: { select: PROMO_SELECT, restaurant_id: `eq.${r.id}`, order: 'created_at.asc' } }),
     db.rest('restaurant_ordering', { query: { select: '*', restaurant_id: `eq.${r.id}` } }),
+    db.rest('restaurant_payment_settings', { query: { select: 'methods,combo_options', restaurant_id: `eq.${r.id}` } }),
   ]);
+  const payments = paymentsView(payRow);
   return json(publicShape({
     title: s.title || r.name, description: s.description || r.description || '', logo_path: s.logo_path, cover_path: s.cover_path,
     design: s.design, whatsapp: s.whatsapp, promotions: promos.filter((p) => p.active),
     categories: cats.map((c) => ({ name: c.name, products: prods.filter((p) => p.category_id === c.id) })),
-  }, r.plan, db, { ordering: orderingView(ordRow, r.plan, null), preview: true }));
+  }, r.plan, db, { ordering: orderingView(ordRow, r.plan, null, payments), payments, preview: true }));
 }
 
 async function cleanupImages(db, rid) {

@@ -9,7 +9,7 @@ export const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0
 
 export function makeWorld() {
   const t = { restaurants: [], restaurant_owners: [], platform_admins: [], categories: [], products: [], menu_settings: [], menu_versions: [], pending_image_deletes: [], audit_log: [], promotions: [],
-    restaurant_ordering: [], restaurant_tables: [], orders: [], order_items: [], order_status_history: [] };
+    restaurant_ordering: [], restaurant_payment_settings: [], restaurant_tables: [], orders: [], order_items: [], order_status_history: [] };
   const storage = new Map(); const users = {}; let tick = 0;
   const now = () => new Date(Date.UTC(2026, 9, 28, 12, 0, tick++)).toISOString();
   const reply = (d, s = 200) => new Response(d === undefined ? null : JSON.stringify(d), { status: s });
@@ -61,7 +61,7 @@ export function makeWorld() {
       const fee = a.p_type === 'delivery' ? (a.p_fee || 0) : 0;
       const number = Math.max(0, ...t.orders.filter((o) => o.restaurant_id === r.id).map((o) => o.number)) + 1;
       const o = { id: crypto.randomUUID(), restaurant_id: r.id, number, tracking_token: a.p_token, type: a.p_type, status: 'nuevo', table_id: a.p_table ?? null, table_label: label,
-        customer_name: a.p_name || '', customer_phone: a.p_phone || '', address: a.p_address || '', note: a.p_note || '', payment_method: a.p_payment ?? null,
+        customer_name: a.p_name || '', customer_phone: a.p_phone || '', address: a.p_address || '', note: a.p_note || '', payment_method: a.p_payment ?? null, payment_combo: a.p_combo ?? null,
         subtotal, delivery_fee: fee, total: subtotal + fee, created_at: now() };
       t.orders.push(o);
       a.p_items.forEach((i) => t.order_items.push({ order_id: o.id, restaurant_id: r.id, product_id: i.product_id, name: i.name, unit_price: i.price, qty: i.qty, created_at: now() }));
@@ -91,7 +91,7 @@ export function makeWorld() {
     const tbl = m[1]; const rows = t[tbl]; const wantRows = /representation/.test(init.headers?.prefer || '');
     if (method === 'GET') { let r = sorted(rows.filter((x) => match(x, u)), u.searchParams.get('order')); if (u.searchParams.get('limit')) r = r.slice(0, +u.searchParams.get('limit')); return reply(r.map((x) => ({ ...x }))); }
     if (method === 'POST') {
-      const row = { id: crypto.randomUUID(), created_at: now(), ...(tbl === 'products' ? { featured: false } : {}), ...(tbl === 'restaurant_tables' ? { active: true } : {}), ...(tbl === 'restaurant_ordering' ? { state: 'cerrado', accept_mesa: true, accept_take_away: true, accept_delivery: false, delivery_fee: 0, payment_methods: ['efectivo'] } : {}), ...body };
+      const row = { id: crypto.randomUUID(), created_at: now(), ...(tbl === 'products' ? { featured: false } : {}), ...(tbl === 'restaurant_tables' ? { active: true } : {}), ...(tbl === 'restaurant_ordering' ? { state: 'cerrado', accept_mesa: true, accept_take_away: true, accept_delivery: false, delivery_fee: 0 } : {}), ...body };
       if (tbl === 'pending_image_deletes' && rows.some((x) => x.path === body.path)) return reply({ code: '23505' }, 409);
       if (tbl === 'products' && !t.categories.some((c) => c.id === body.category_id && c.restaurant_id === body.restaurant_id)) return reply({ code: '23503' }, 409);
       rows.push(row); if (['categories', 'products', 'menu_settings', 'promotions'].includes(tbl)) touch(body.restaurant_id);

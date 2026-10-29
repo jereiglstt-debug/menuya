@@ -18,6 +18,7 @@ export const FEATURES = {
   colores_basicos: 'basico',
   qr_general: 'basico',
   whatsapp_mensaje: 'basico',
+  metodos_pago: 'basico',
 
   plantillas_extra: 'profesional',
   personalizacion_avanzada: 'profesional',

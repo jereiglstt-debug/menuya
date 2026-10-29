@@ -3,9 +3,9 @@
 // vuelve a calcular el total con el menú publicado y el local lo confirma.
 import { h, money } from '/shared/core.js';
 import { orderTotal } from '/shared/whatsapp.js';
+import { PAY_LABEL } from '/shared/pagos.js';
 
 const TYPE_LABEL = { mesa: 'Comer acá (mesa)', take_away: 'Retiro en el local (Take Away)', delivery: 'Delivery (envío a domicilio)' };
-const METHOD_LABEL = { efectivo: 'Efectivo', transferencia: 'Transferencia', tarjeta: 'Tarjeta (al recibir o en el local)' };
 const STATUS_TEXT = {
   nuevo: 'Recibido. Esperando que el local lo acepte.',
   en_preparacion: 'En preparación.',
@@ -59,7 +59,11 @@ export function openOrderForm({ dlg, d, ord, cart, paint: repaintBar, onPlaced }
   const name = h('input', { id: ids('name'), maxlength: '60', autocomplete: 'name' });
   const phone = h('input', { id: ids('phone'), type: 'tel', maxlength: '25', autocomplete: 'tel' });
   const addr = h('input', { id: ids('addr'), maxlength: '200', autocomplete: 'street-address' });
-  const pay = h('select', { id: ids('pay') }, h('option', { value: '' }, 'Elegí…'), ord.methods.map((m) => h('option', { value: m }, METHOD_LABEL[m])));
+  const pay = h('select', { id: ids('pay') }, h('option', { value: '' }, 'Elegí…'), ord.methods.map((m) => h('option', { value: m }, PAY_LABEL[m])));
+  const comboChecks = (ord.combo_options || []).map((m) => ({ m, el: h('input', { type: 'checkbox', id: ids(`combo-${m}`), value: m }) }));
+  const comboBox = h('fieldset', { class: 'm-combo' }, h('legend', {}, '¿Cuáles vas a combinar? (elegí al menos dos)'),
+    comboChecks.map(({ m, el }) => h('label', { class: 'm-check', for: el.id }, el, PAY_LABEL[m])));
+  const chosenCombo = () => comboChecks.filter((c) => c.el.checked).map((c) => c.m);
   const note = h('textarea', { id: ids('note'), maxlength: '300', rows: '2' });
   const trap = h('input', { name: 'website', tabindex: '-1', autocomplete: 'off', class: 'm-trap', 'aria-hidden': 'true' }); // campo trampa
   const list = h('ul', { class: 'm-cart-list' });
@@ -67,6 +71,12 @@ export function openOrderForm({ dlg, d, ord, cart, paint: repaintBar, onPlaced }
   const err = h('p', { class: 'm-cart-warn hidden', role: 'alert' });
   const fe = {}; const field = (k, label, el, hint) => { fe[k] = h('p', { class: 'm-field-err hidden', role: 'alert' }); return h('div', { class: 'm-f', 'data-f': k }, h('label', { for: el.id }, label), el, hint && h('p', { class: 'm-cart-hint' }, hint), fe[k]); };
   const rows = { phone: field('customer_phone', 'Teléfono (para avisarte)', phone), addr: field('address', 'Dirección de entrega', addr), pay: field('payment_method', 'Cómo vas a pagar', pay, 'El pago se hace al recibir o en el local. No se cobra nada por internet.') };
+  rows.combo = field('payment_combo', 'Combinación de pago', comboBox);
+  pay.addEventListener('change', () => rows.combo.classList.toggle('hidden', pay.value !== 'combinado'));
+  rows.combo.classList.add('hidden');
+  // al corregir, el aviso anterior deja de mostrarse
+  comboChecks.forEach(({ el }) => el.addEventListener('change', () => fe.payment_combo.classList.add('hidden')));
+  pay.addEventListener('change', () => { fe.payment_method.classList.add('hidden'); fe.payment_combo.classList.add('hidden'); });
   const send = h('button', { class: 'm-btn', type: 'submit' }, d.preview ? 'Confirmar pedido (no disponible en la vista previa)' : 'Confirmar pedido');
   if (d.preview) send.setAttribute('disabled', '');
   const items = () => [...cart.values()];
@@ -95,7 +105,7 @@ export function openOrderForm({ dlg, d, ord, cart, paint: repaintBar, onPlaced }
     try {
       const res = await fetch(`/api/public/orders/${encodeURIComponent(d.slug)}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({
         type: typeSel.value, table_id: typeSel.value === 'mesa' ? ord.table?.id : undefined,
-        customer_name: name.value, customer_phone: phone.value, address: addr.value, payment_method: pay.value || undefined, note: note.value,
+        customer_name: name.value, customer_phone: phone.value, address: addr.value, payment_method: pay.value || undefined, payment_combo: pay.value === 'combinado' ? chosenCombo() : undefined, note: note.value,
         website: trap.value, items: items().map((i) => ({ id: i.id, qty: i.qty })),
       }) });
       const data = await res.json().catch(() => ({}));
@@ -111,7 +121,7 @@ export function openOrderForm({ dlg, d, ord, cart, paint: repaintBar, onPlaced }
     } catch { err.textContent = 'Sin conexión. Revisá tu internet y probá de nuevo.'; err.classList.remove('hidden'); send.disabled = false; }
   } },
     h('label', { for: ids('type') }, 'Cómo querés tu pedido'), typeSel,
-    field('customer_name', 'Tu nombre', name), rows.phone, rows.addr, rows.pay,
+    field('customer_name', 'Tu nombre', name), rows.phone, rows.addr, rows.pay, rows.combo,
     field('note', 'Aclaraciones (opcional)', note), trap, totals, err,
     h('p', { class: 'm-cart-hint' }, 'Los precios son los del menú. El local confirma tu pedido y te avisa por acá mismo.'),
     h('div', { class: 'm-cart-actions' }, send, h('button', { type: 'button', class: 'm-btn alt', onclick: () => dlg.close() }, 'Seguir mirando el menú')));

@@ -6,6 +6,7 @@ import { renderMenu } from '/menu/render.js';
 import { designTab } from '/panel/diseno.js';
 import { qrTab } from '/panel/qrtab.js';
 import { promosTab } from '/panel/promos.js';
+import { pagosTab } from '/panel/pagos.js';
 import { pedidosTab, startOrderAlerts, stopOrderAlerts } from '/panel/pedidos.js';
 
 const $app = document.getElementById('app');
@@ -24,7 +25,7 @@ const api = session.api;
 let S = null;
 let TAB = 'menu';
 let NEW_ORDERS = 0;
-const TABS = [['menu', 'Menú'], ['pedidos', 'Pedidos'], ['promos', 'Promociones'], ['diseno', 'Diseño'], ['qr', 'Código QR']];
+const TABS = [['menu', 'Menú'], ['pedidos', 'Pedidos'], ['promos', 'Promociones'], ['diseno', 'Diseño'], ['qr', 'Código QR'], ['pagos', 'Métodos de pago']];
 
 // ---------- login ----------
 function renderLogin(msg) {
@@ -151,6 +152,7 @@ function render() {
       TAB === 'menu' ? [businessCard(), menuSection()]
         : TAB === 'pedidos' ? pedidosTab({ S, api, confirmDlg, inputDlg })
         : TAB === 'promos' ? promosTab({ S, api, act, confirmDlg })
+        : TAB === 'pagos' ? pagosTab({ S, api, act })
         : TAB === 'diseno' ? designTab({ S, api, act, toast, checkFile, IMG_TYPES, confirmDlg })
         : qrTab({ S, api })));
 }

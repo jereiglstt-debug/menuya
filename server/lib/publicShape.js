@@ -17,6 +17,7 @@ export function publicShape(src, plan, db, opts = {}) {
     design: sanitizeDesign(src.design, perms),
     whatsapp: hasFeature(plan, 'whatsapp_mensaje') ? (src.whatsapp || null) : null,
     ordering,
+    payments: opts.payments || null, // medios de pago (en vivo, todos los planes)
     ...(opts.preview ? { preview: true } : {}),
     cart: hasFeature(plan, 'carrito') && hasFeature(plan, 'whatsapp_mensaje') && !!src.whatsapp,
     promotions: hasFeature(plan, 'promociones') ? (src.promotions || []).map((p) => ({ title: p.title, description: p.description })) : [],

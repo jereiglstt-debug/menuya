@@ -2,11 +2,10 @@
 // del local, precios, mesas, transiciones) se decide ACÁ, en el servidor.
 import { hasFeature } from './plans.js';
 import { isUuid } from './validate.js';
+import { METHODS, BASE_METHODS, DEFAULT_PAYMENTS } from './payments.js';
 
 export const STATES = ['abierto', 'pausado', 'cerrado'];
 export const TYPES = ['mesa', 'take_away', 'delivery'];
-export const METHODS = ['efectivo', 'transferencia', 'tarjeta'];
-export const METHOD_LABELS = { efectivo: 'Efectivo', transferencia: 'Transferencia', tarjeta: 'Tarjeta (al recibir o en el local)' };
 export const STATUSES = ['nuevo', 'en_preparacion', 'listo', 'entregado', 'cancelado'];
 export const ACTIVE_STATUSES = ['nuevo', 'en_preparacion', 'listo'];
 export const TRANSITIONS = {
@@ -20,7 +19,8 @@ export const LIMITS = { maxLines: 40, maxQty: 20, maxTotal: 10_000_000, maxTable
 const TYPE_FEATURE = { mesa: 'mesas_y_qr_mesa', take_away: 'take_away', delivery: 'delivery' };
 
 // Lo que ve el menú público. null = este local no ofrece pedidos por acá.
-export function orderingView(row, plan, table) {
+// payments: configuración de pagos del local (o null → solo efectivo).
+export function orderingView(row, plan, table, payments = null) {
   if (!row || !hasFeature(plan, 'pedidos_nativos')) return null;
   const types = [];
   if (row.accept_mesa && table && hasFeature(plan, TYPE_FEATURE.mesa)) types.push('mesa');
@@ -28,7 +28,8 @@ export function orderingView(row, plan, table) {
   if (row.accept_delivery && hasFeature(plan, TYPE_FEATURE.delivery)) types.push('delivery');
   if (!types.length) return null;
   return {
-    state: row.state, types, fee: Number(row.delivery_fee) || 0, methods: row.payment_methods,
+    state: row.state, types, fee: Number(row.delivery_fee) || 0,
+    methods: (payments || DEFAULT_PAYMENTS).methods, combo_options: (payments || DEFAULT_PAYMENTS).combo_options || [],
     table: table ? { id: table.id, label: table.label } : null,
   };
 }
@@ -64,11 +65,16 @@ export function validateOrderInput(b, view) {
   }
   if (out.type === 'delivery') out.address = text(errors, 'address', b.address, { min: 5, max: 200, msg: 'Ingresá la dirección de entrega (entre 5 y 200 caracteres).' });
 
+  out.payment_method = null; out.payment_combo = null;
   if (b.payment_method === undefined || b.payment_method === null || b.payment_method === '') {
     if (out.type === 'take_away' || out.type === 'delivery') errors.payment_method = 'Elegí cómo vas a pagar.';
-    out.payment_method = null;
-  } else if (!view.methods.includes(b.payment_method)) errors.payment_method = 'Ese medio de pago no está disponible.';
-  else out.payment_method = b.payment_method;
+  } else if (!METHODS.includes(b.payment_method) || !view.methods.includes(b.payment_method)) errors.payment_method = 'Ese medio de pago no está disponible.';
+  else if (b.payment_method === 'combinado') {
+    const c = b.payment_combo;
+    if (!Array.isArray(c) || new Set(c).size !== c.length || c.length < 2 || !c.every((x) => BASE_METHODS.includes(x) && view.combo_options.includes(x))) {
+      errors.payment_combo = 'Elegí al menos dos medios para combinar entre los disponibles.';
+    } else { out.payment_method = 'combinado'; out.payment_combo = BASE_METHODS.filter((m) => c.includes(m)); }
+  } else out.payment_method = b.payment_method;
 
   if (out.type === 'mesa') {
     if (!view.table || b.table_id !== view.table.id) errors.table_id = 'Escaneá de nuevo el QR de tu mesa.';

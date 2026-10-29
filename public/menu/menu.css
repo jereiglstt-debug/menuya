@@ -90,3 +90,10 @@
 .m-steps{display:flex;gap:6px;list-style:none;margin:0 0 12px;padding:0}
 .m-steps li{flex:1;text-align:center;font-size:.78rem;padding:6px 2px;border-bottom:4px solid var(--m-line);color:var(--m-muted)}
 .m-steps li.done{border-bottom-color:var(--m-accent);color:var(--m-ink);font-weight:700}
+
+.m-pay{margin:24px 0 8px;padding:12px 14px;border-top:1px solid var(--m-line);color:var(--m-muted);font-size:.92rem}
+.m-pay strong{color:var(--m-ink)}
+.m-combo{border:1px solid var(--m-line);border-radius:10px;padding:8px 12px;margin:0}
+.m-combo legend{font-weight:600;padding:0 6px}
+.m-cart .m-check{display:flex;align-items:center;gap:8px;margin:6px 0;font-weight:400}
+.m-cart .m-check input{width:20px;height:20px}

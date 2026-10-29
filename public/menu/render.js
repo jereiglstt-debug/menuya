@@ -3,6 +3,7 @@
 // que verán los clientes.
 import { h, money } from '/shared/core.js';
 import { resolveDesign, FONTS, fontHref, textOn } from '/shared/design.js';
+import { PAY_LABEL } from '/shared/pagos.js';
 import { openOrderForm, openTracking, savedOrder } from '/menu/pedido.js';
 import { waLink, inquiryMessage, orderMessage, orderTotal, MAX_QTY, MAX_LINES, MAX_URL } from '/shared/whatsapp.js';
 
@@ -123,6 +124,10 @@ export function renderMenu(d) {
       h('h2', {}, c.name),
       h('ul', { class: 'm-list' }, c.products.map((p, pi) => item(p, `${ci}:${pi}`))))),
     !cats.length && h('p', { class: 'm-empty' }, 'Todavía no hay productos para mostrar.'),
+    d.payments && d.payments.methods.length > 0 && h('footer', { class: 'm-pay' },
+      h('strong', {}, 'Medios de pago: '),
+      d.payments.methods.map((m) => PAY_LABEL[m]).join(' · '),
+      d.payments.methods.includes('combinado') && d.payments.combo_options.length >= 2 && h('span', { class: 'm-pay-combo' }, ` (en “Combinado” podés usar: ${d.payments.combo_options.map((m) => PAY_LABEL[m]).join(' + ')})`)),
     barOn && bar, barOn && dlg,
     ord && ord.state !== 'abierto' && h('div', { class: 'm-closed', role: 'status' }, ord.state === 'pausado' ? 'Los pedidos están pausados por un momento. Podés ver el menú igual.' : 'Ahora no estamos recibiendo pedidos. Podés ver el menú igual.'),
     !cartOn && !ord && d.whatsapp && h('div', { class: 'm-bar' },

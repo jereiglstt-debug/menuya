@@ -4,7 +4,7 @@
 -- Pegalo ENTERO en el SQL Editor de Supabase. Resultado final: PEDIDOS OK
 -- Si algo falla, aparece un error que empieza con "FALLO:".
 -- Corre en una transacción que se DESHACE (no deja datos). Requiere haber
--- ejecutado 0001 a 0005. NOTA: no pude ejecutarlo en mi entorno (sin Postgres).
+-- ejecutado 0001 a 0006. NOTA: no pude ejecutarlo en mi entorno (sin Postgres).
 -- =====================================================================
 begin;
 
@@ -102,18 +102,56 @@ do $$ declare oid uuid; n int; begin
   exception when sqlstate 'P0002' then null; end;
 end $$;
 
+-- 5b) Métodos de pago: combinado y reglas de la tabla de configuración (migración 0006).
+do $$ declare r jsonb; o record; begin
+  r := public.create_order('bbbbbbbb-1111-4000-8000-00000000000a', 'take_away', null, 'Ana', '5491122334455', '', '', 'combinado', 0,
+        '[{"name":"X","price":10,"qty":1}]'::jsonb, 'tok-aaaaaaaaaaaaaaaaaaaa7', array['efectivo','debito']);
+  select * into o from public.orders where id = (r->>'id')::uuid;
+  if o.payment_method <> 'combinado' or o.payment_combo <> array['efectivo','debito'] then raise exception 'FALLO: no guardó el pago combinado'; end if;
+  begin
+    perform public.create_order('bbbbbbbb-1111-4000-8000-00000000000a', 'take_away', null, 'Ana', '549', '', '', 'combinado', 0,
+      '[{"name":"X","price":1,"qty":1}]'::jsonb, 'tok-aaaaaaaaaaaaaaaaaaaa8', array['efectivo']);
+    raise exception 'FALLO: se aceptó un combinado con un solo medio';
+  exception when check_violation then null; end;
+  begin
+    perform public.create_order('bbbbbbbb-1111-4000-8000-00000000000a', 'take_away', null, 'Ana', '549', '', '', 'combinado', 0,
+      '[{"name":"X","price":1,"qty":1}]'::jsonb, 'tok-aaaaaaaaaaaaaaaaaaaa9', null);
+    raise exception 'FALLO: se aceptó "combinado" sin detalle';
+  exception when check_violation then null; end;
+  begin
+    perform public.create_order('bbbbbbbb-1111-4000-8000-00000000000a', 'take_away', null, 'Ana', '549', '', '', 'debito', 0,
+      '[{"name":"X","price":1,"qty":1}]'::jsonb, 'tok-aaaaaaaaaaaaaaaaaaaab', array['efectivo','debito']);
+    raise exception 'FALLO: se aceptó un detalle de combinado en un pago simple';
+  exception when check_violation then null; end;
+  begin
+    insert into public.restaurant_payment_settings (restaurant_id, methods) values ('bbbbbbbb-1111-4000-8000-00000000000a', array['combinado']);
+    raise exception 'FALLO: se aceptó "combinado" sin combinaciones';
+  exception when check_violation then null; end;
+  begin
+    insert into public.restaurant_payment_settings (restaurant_id, methods) values ('bbbbbbbb-1111-4000-8000-00000000000a', array['bitcoin']);
+    raise exception 'FALLO: se aceptó un medio de pago inexistente';
+  exception when check_violation then null; end;
+  insert into public.restaurant_payment_settings (restaurant_id, methods, combo_options) values
+    ('bbbbbbbb-1111-4000-8000-00000000000a', array['efectivo','combinado'], array['efectivo','debito']),
+    ('bbbbbbbb-1111-4000-8000-00000000000b', array['credito'], '{}');
+end $$;
+
 -- 6) Propietario A (authenticated): ve SOLO lo suyo y no escribe ni ejecuta funciones.
 set local role authenticated;
 select set_config('request.jwt.claims', '{"sub":"aaaaaaaa-1111-4000-8000-00000000000a","role":"authenticated"}', true);
 do $$ declare n int; begin
   select count(*) into n from public.orders where customer_name in ('Ana', 'Beto') or number >= 1;
-  if n <> 3 then raise exception 'FALLO: A ve % pedidos (debería ver los 3 suyos)', n; end if;
+  if n <> 4 then raise exception 'FALLO: A ve % pedidos (debería ver los 4 suyos)', n; end if;
   select count(*) into n from public.orders where restaurant_id = 'bbbbbbbb-1111-4000-8000-00000000000b';
   if n <> 0 then raise exception 'FALLO: A ve pedidos de B'; end if;
   select count(*) into n from public.order_items where restaurant_id = 'bbbbbbbb-1111-4000-8000-00000000000b';
   if n <> 0 then raise exception 'FALLO: A ve ítems de B'; end if;
   select count(*) into n from public.restaurant_tables where restaurant_id = 'bbbbbbbb-1111-4000-8000-00000000000b';
   if n <> 0 then raise exception 'FALLO: A ve mesas de B'; end if;
+  select count(*) into n from public.restaurant_payment_settings;
+  if n <> 1 then raise exception 'FALLO: A ve % configuraciones de pago (debería ver 1)', n; end if;
+  begin update public.restaurant_payment_settings set methods = array['efectivo']; raise exception 'FALLO: A pudo modificar los métodos de pago';
+  exception when insufficient_privilege then null; end;
   begin update public.orders set total = 0; raise exception 'FALLO: A pudo hacer UPDATE en orders';
   exception when insufficient_privilege then null; end;
   begin delete from public.order_items; raise exception 'FALLO: A pudo hacer DELETE en order_items';
@@ -131,6 +169,8 @@ reset role;
 set local role anon;
 do $$ begin
   begin perform 1 from public.orders limit 1; raise exception 'FALLO: anon pudo leer orders';
+  exception when insufficient_privilege then null; end;
+  begin perform 1 from public.restaurant_payment_settings limit 1; raise exception 'FALLO: anon pudo leer los métodos de pago';
   exception when insufficient_privilege then null; end;
   begin perform 1 from public.restaurant_ordering limit 1; raise exception 'FALLO: anon pudo leer restaurant_ordering';
   exception when insufficient_privilege then null; end;

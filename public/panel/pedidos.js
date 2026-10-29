@@ -1,10 +1,10 @@
 // Pestaña "Pedidos" (Plan Premium): cola, historial, mesas, ajustes y estadísticas.
 // El servidor exige el plan y valida cada cambio de estado; esto solo lo muestra.
 import { h, money, toast } from '/shared/core.js';
+import { payText } from '/shared/pagos.js';
 
 const STATUS = { nuevo: 'Nuevo', en_preparacion: 'En preparación', listo: 'Listo', entregado: 'Entregado', cancelado: 'Cancelado' };
 const TYPE = { mesa: 'Mesa', take_away: 'Take Away', delivery: 'Delivery' };
-const METHOD = { efectivo: 'Efectivo', transferencia: 'Transferencia', tarjeta: 'Tarjeta (al recibir o en el local)' };
 const NEXT = { nuevo: ['en_preparacion', 'Aceptar y preparar'], en_preparacion: ['listo', 'Marcar listo'], listo: ['entregado', 'Marcar entregado'] };
 const POLL_MS = 15000;
 
@@ -75,7 +75,7 @@ export function pedidosTab({ S, api, confirmDlg, inputDlg }) {
       o.customer_phone && h('p', { class: 'm0' }, 'Tel: ', h('a', { href: `tel:+${o.customer_phone}` }, `+${o.customer_phone}`)),
       o.address && h('p', { class: 'm0' }, `Dirección: ${o.address}`),
       o.note && h('p', { class: 'm0 o-note' }, `Aclaraciones: ${o.note}`),
-      h('p', { class: 'm0' }, o.payment_method ? `Pago: ${METHOD[o.payment_method]}` : 'Pago: a definir en el local', ' · ', h('strong', {}, `Total ${money(o.total)}`), o.delivery_fee > 0 && h('span', { class: 'pmeta' }, ` (envío ${money(o.delivery_fee)})`)),
+      h('p', { class: 'm0' }, o.payment_method ? `Pago: ${payText(o.payment_method, o.payment_combo)}` : 'Pago: a definir en el local', ' · ', h('strong', {}, `Total ${money(o.total)}`), o.delivery_fee > 0 && h('span', { class: 'pmeta' }, ` (envío ${money(o.delivery_fee)})`)),
       h('details', {}, h('summary', {}, 'Historial de estados'), h('ul', { class: 'o-hist' }, o.history.map((x) => h('li', {}, `${hhmm(x.at)} — ${STATUS[x.status]}`)))),
       withActions && next && h('div', { class: 'pacts o-acts' },
         h('button', { class: 'btn primary', onclick: (e) => move(o, next[0], e.currentTarget) }, next[1]),
@@ -139,15 +139,14 @@ export function pedidosTab({ S, api, confirmDlg, inputDlg }) {
     const [takeI, takeL] = cb('a-take', 'Retiro en el local (Take Away)', o.accept_take_away);
     const [delI, delL] = cb('a-del', 'Delivery (envío a domicilio)', o.accept_delivery);
     const fee = h('input', { id: 'a-fee', inputmode: 'decimal', value: String(o.delivery_fee).replace('.', ',') });
-    const pays = Object.keys(METHOD).map((m) => { const i = h('input', { id: `a-p-${m}`, type: 'checkbox', checked: o.payment_methods.includes(m), 'data-m': m }); return [i, h('label', { class: 'check', for: `a-p-${m}` }, i, METHOD[m])]; });
     const err = h('div', { class: 'form-error hidden', role: 'alert' });
     return h('section', { class: 'card' }, h('h3', {}, 'Cómo recibís pedidos'), mesaL, takeL, delL,
       h('label', { for: 'a-fee' }, 'Costo de envío (en pesos)'), fee,
-      h('h3', {}, 'Medios de pago'), h('p', { class: 'hint' }, 'El pago se hace al recibir o en el local. La plataforma no cobra online.'), pays.map((x) => x[1]), err,
+      h('p', { class: 'hint' }, 'Los medios de pago (efectivo, débito, crédito y combinado) se configuran en la pestaña “Métodos de pago”.'), err,
       h('div', { class: 'actions' }, h('button', { class: 'btn primary', onclick: async () => {
         err.classList.add('hidden');
         try {
-          const r = await api('/owner/ordering', { method: 'PATCH', body: { accept_mesa: mesaI.checked, accept_take_away: takeI.checked, accept_delivery: delI.checked, delivery_fee: fee.value, payment_methods: pays.filter((x) => x[0].checked).map((x) => x[0].dataset.m) } });
+          const r = await api('/owner/ordering', { method: 'PATCH', body: { accept_mesa: mesaI.checked, accept_take_away: takeI.checked, accept_delivery: delI.checked, delivery_fee: fee.value } });
           ordering = r.ordering; paintState(); toast('Ajustes guardados. Se aplican ya mismo.');
         } catch (e) { if (e.message !== 'sesión') { err.textContent = Object.values(e.details || {}).join(' ') || e.message; err.classList.remove('hidden'); } }
       } }, 'Guardar ajustes')));

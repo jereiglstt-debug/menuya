@@ -5,6 +5,7 @@
 import { json, HttpError, readJson } from '../lib/http.js';
 import { isSlugFormat, isUuid } from '../lib/validate.js';
 import { hasFeature } from '../lib/plans.js';
+import { paymentsView } from '../lib/payments.js';
 import {
   orderingView, validateOrderInput, normalizeItems, priceItems, newToken, LIMITS, ACTIVE_STATUSES,
 } from '../lib/orders.js';
@@ -27,8 +28,9 @@ export async function createOrder({ request, db, params }) {
   const [row] = await db.rest('restaurant_ordering', { query: { select: '*', restaurant_id: `eq.${r.id}` } });
   const body = await readJson(request);
   if (body && body.website) throw new HttpError(400, 'Pedido inválido.'); // campo trampa para bots
+  const [payRow] = await db.rest('restaurant_payment_settings', { query: { select: 'methods,combo_options', restaurant_id: `eq.${r.id}` } });
   const table = await findTable(db, r.id, body?.table_id);
-  const view = orderingView(row, r.plan, table);
+  const view = orderingView(row, r.plan, table, paymentsView(payRow));
   if (!view) throw new HttpError(403, 'Este local no recibe pedidos por acá.');
   if (view.state === 'pausado') throw new HttpError(409, 'El local pausó los pedidos por un momento. Probá de nuevo en un rato.');
   if (view.state !== 'abierto') throw new HttpError(409, 'El local no está recibiendo pedidos ahora.');
@@ -55,7 +57,7 @@ export async function createOrder({ request, db, params }) {
   const created = await db.rpc('create_order', {
     p_restaurant: r.id, p_type: v.value.type, p_table: v.value.table_id ?? null,
     p_name: v.value.customer_name, p_phone: v.value.customer_phone, p_address: v.value.address,
-    p_note: v.value.note, p_payment: v.value.payment_method, p_fee: view.fee, p_items: priced.items, p_token: token,
+    p_note: v.value.note, p_payment: v.value.payment_method, p_combo: v.value.payment_combo, p_fee: view.fee, p_items: priced.items, p_token: token,
   });
   const total = subtotal + (v.value.type === 'delivery' ? view.fee : 0);
   return json({ order: { number: created.number, tracking_token: token, total, status: 'nuevo' } }, 201, { 'cache-control': 'no-store' });

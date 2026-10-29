@@ -4,7 +4,7 @@ import { HttpError, readJson, json } from '../lib/http.js';
 import { requireOwner } from '../lib/auth.js';
 import { requireFeature } from '../lib/plans.js';
 import { isUuid } from '../lib/validate.js';
-import { STATES, METHODS, STATUSES, ACTIVE_STATUSES, canMove, LIMITS } from '../lib/orders.js';
+import { STATES, STATUSES, ACTIVE_STATUSES, canMove, LIMITS } from '../lib/orders.js';
 
 async function ctx(request, db) {
   const c = await requireOwner(request, db);
@@ -22,7 +22,7 @@ async function ensureOrdering(db, rid) {
 }
 const orderingOut = (o) => ({
   state: o.state, accept_mesa: o.accept_mesa, accept_take_away: o.accept_take_away, accept_delivery: o.accept_delivery,
-  delivery_fee: Number(o.delivery_fee), payment_methods: o.payment_methods,
+  delivery_fee: Number(o.delivery_fee),
 });
 const listTables = (db, rid) => db.rest('restaurant_tables', { query: { select: 'id,label,active,position', restaurant_id: `eq.${rid}`, order: 'position.asc,created_at.asc' } });
 
@@ -45,11 +45,6 @@ export async function updateOrdering({ request, db }) {
   if (b.delivery_fee !== undefined) {
     const n = typeof b.delivery_fee === 'number' ? b.delivery_fee : Number(String(b.delivery_fee).replace(',', '.'));
     Number.isFinite(n) && n >= 0 && n <= 1_000_000 && String(b.delivery_fee).trim() !== '' ? (out.delivery_fee = Math.round(n * 100) / 100) : (errors.delivery_fee = 'Ingresá un costo de envío válido (0 o más).');
-  }
-  if (b.payment_methods !== undefined) {
-    const m = b.payment_methods;
-    Array.isArray(m) && m.length >= 1 && new Set(m).size === m.length && m.every((x) => METHODS.includes(x))
-      ? (out.payment_methods = m) : (errors.payment_methods = 'Elegí al menos un medio de pago válido.');
   }
   if (Object.keys(errors).length) throw new HttpError(400, 'Revisá los datos.', errors);
   if (!Object.keys(out).length) throw new HttpError(400, 'No hay cambios para guardar.');
@@ -125,7 +120,7 @@ export async function deleteTable({ request, db, params }) {
 const orderOut = (o, items, history) => ({
   id: o.id, number: o.number, type: o.type, status: o.status, table_label: o.table_label,
   customer_name: o.customer_name, customer_phone: o.customer_phone, address: o.address, note: o.note,
-  payment_method: o.payment_method, subtotal: Number(o.subtotal), delivery_fee: Number(o.delivery_fee), total: Number(o.total),
+  payment_method: o.payment_method, payment_combo: o.payment_combo ?? null, subtotal: Number(o.subtotal), delivery_fee: Number(o.delivery_fee), total: Number(o.total),
   created_at: o.created_at,
   items: items.filter((i) => i.order_id === o.id).map((i) => ({ name: i.name, unit_price: Number(i.unit_price), qty: i.qty })),
   history: history.filter((h) => h.order_id === o.id).map((h) => ({ status: h.status, at: h.created_at })),

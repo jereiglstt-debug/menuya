@@ -14,7 +14,10 @@ async function setup({ open = true } = {}) {
   const agotado = (await w.call(tP, 'POST', '/owner/products', { category_id: cat.id, name: 'Agotada', price_ars: 100, available: false })).body.product;
   const fuga = (await w.call(tP, 'POST', '/owner/products', { category_id: cat.id, name: 'Fugazza', price_ars: 8000 })).body.product;
   await w.call(tP, 'POST', '/owner/publish');
-  if (open) await w.call(tP, 'PATCH', '/owner/ordering', { state: 'abierto', accept_delivery: true, delivery_fee: 1500, payment_methods: ['efectivo', 'transferencia'] });
+  if (open) {
+    await w.call(tP, 'PATCH', '/owner/ordering', { state: 'abierto', accept_delivery: true, delivery_fee: 1500 });
+    await w.call(tP, 'PATCH', '/owner/payments', { methods: ['efectivo', 'debito', 'combinado'], combo_options: ['efectivo', 'debito'] });
+  }
   return { w, tP, tQ, tPro, P, Q, PRO, muzza, agotado, fuga };
 }
 const order = (w, slug, body) => w.call(null, 'POST', `/public/orders/${slug}`, body);
@@ -25,7 +28,7 @@ test('reglas puras: transiciones, token, items', () => {
   assert.ok(!canMove('nuevo', 'listo') && !canMove('entregado', 'cancelado') && !canMove('cancelado', 'nuevo'));
   assert.match(newToken(), /^[A-Za-z0-9_-]{24}$/); assert.notEqual(newToken(), newToken());
   assert.equal(orderingView(null, 'premium', null), null);
-  assert.equal(orderingView({ accept_mesa: true, accept_take_away: false, accept_delivery: false, state: 'abierto', payment_methods: ['efectivo'], delivery_fee: 0 }, 'premium', null), null, 'solo mesa y sin mesa → no hay pedidos');
+  assert.equal(orderingView({ accept_mesa: true, accept_take_away: false, accept_delivery: false, state: 'abierto', delivery_fee: 0 }, 'premium', null), null, 'solo mesa y sin mesa → no hay pedidos');
   assert.ok(normalizeItems([{ id: 'x', qty: 1 }]).error);
   const id = crypto.randomUUID();
   assert.deepEqual(normalizeItems([{ id, qty: 2 }, { id, qty: 3 }]).lines, [{ id, qty: 5 }]);
@@ -37,7 +40,7 @@ test('planes: solo Premium usa pedidos (dueño y público)', async () => {
   for (const [m, p, b] of [['GET', '/owner/ordering'], ['PATCH', '/owner/ordering', { state: 'abierto' }], ['POST', '/owner/tables', { label: 'M1' }], ['GET', '/owner/orders'], ['GET', '/owner/stats']]) {
     assert.equal((await w.call(tPro, m, p, b)).status, 403, `${m} ${p}`);
   }
-  w.t.restaurant_ordering.push({ restaurant_id: PRO.id, state: 'abierto', accept_mesa: true, accept_take_away: true, accept_delivery: true, delivery_fee: 0, payment_methods: ['efectivo'] });
+  w.t.restaurant_ordering.push({ restaurant_id: PRO.id, state: 'abierto', accept_mesa: true, accept_take_away: true, accept_delivery: true, delivery_fee: 0 });
   assert.equal((await order(w, 'res-pro', take([{ id: crypto.randomUUID(), qty: 1 }]))).status, 403);
 });
 
@@ -45,7 +48,7 @@ test('configuración: validaciones y estado por defecto cerrado', async () => {
   const { w, tP, muzza } = await setup({ open: false });
   assert.equal((await w.call(tP, 'GET', '/owner/ordering')).body.ordering.state, 'cerrado');
   assert.equal((await order(w, 'res-prem', take([{ id: muzza.id, qty: 1 }]))).status, 409, 'cerrado no recibe');
-  for (const bad of [{ state: 'raro' }, { delivery_fee: -1 }, { delivery_fee: 'abc' }, { payment_methods: [] }, { payment_methods: ['bitcoin'] }, { accept_mesa: 'si' }, {}]) {
+  for (const bad of [{ state: 'raro' }, { delivery_fee: -1 }, { delivery_fee: 'abc' }, { accept_mesa: 'si' }, {}]) {
     assert.equal((await w.call(tP, 'PATCH', '/owner/ordering', bad)).status, 400, JSON.stringify(bad));
   }
   await w.call(tP, 'PATCH', '/owner/ordering', { state: 'pausado' });
@@ -82,7 +85,7 @@ test('pedido: datos obligatorios según el tipo, delivery suma envío', async ()
   assert.equal((await order(w, 'res-prem', take(it, { customer_name: '' }))).status, 400);
   assert.equal((await order(w, 'res-prem', take(it, { customer_phone: '12' }))).status, 400);
   assert.equal((await order(w, 'res-prem', take(it, { payment_method: 'bitcoin' }))).status, 400);
-  assert.equal((await order(w, 'res-prem', take(it, { payment_method: 'tarjeta' }))).status, 400, 'medio no habilitado');
+  assert.equal((await order(w, 'res-prem', take(it, { payment_method: 'credito' }))).status, 400, 'medio no habilitado');
   assert.equal((await order(w, 'res-prem', take(it, { type: 'delivery' }))).status, 400, 'sin dirección');
   const d = await order(w, 'res-prem', take(it, { type: 'delivery', address: 'Calle Falsa 123' }));
   assert.equal(d.status, 201); assert.equal(d.body.order.total, 9500 + 1500);

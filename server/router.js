@@ -6,6 +6,7 @@ import * as owner from './handlers/owner.js';
 import { publicMenu } from './handlers/publicMenu.js';
 import * as pubOrders from './handlers/publicOrders.js';
 import * as ord from './handlers/orders.js';
+import * as pay from './handlers/payments.js';
 
 const ROUTES = [
   ['GET',   /^\/config$/,                          pub.config, false],
@@ -23,6 +24,8 @@ const ROUTES = [
   ['POST',   /^\/public\/orders\/([^/]+)$/,          pubOrders.createOrder],
   ['GET',    /^\/public\/orders\/([^/]+)\/([^/]+)$/, pubOrders.trackOrder],
 
+  ['GET',    /^\/owner\/payments$/,                  pay.getPayments],
+  ['PATCH',  /^\/owner\/payments$/,                  pay.updatePayments],
   ['GET',    /^\/owner\/ordering$/,                  ord.getOrdering],
   ['PATCH',  /^\/owner\/ordering$/,                  ord.updateOrdering],
   ['POST',   /^\/owner\/tables$/,                    ord.createTables],

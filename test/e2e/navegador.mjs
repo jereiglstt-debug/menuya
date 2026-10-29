@@ -60,7 +60,7 @@ async function login(page, email) {
 // ---- Profesional ----
 {
   const page = await newPage(); await login(page, 'pro@x.com');
-  ok('panel: pestañas', (await page.locator('.tab').allTextContents()).join('|') === 'Menú|Pedidos|Promociones|Diseño|Código QR');
+  ok('panel: pestañas', (await page.locator('.tab').allTextContents()).join('|') === 'Menú|Pedidos|Promociones|Diseño|Código QR|Métodos de pago');
   await page.click('text=Nueva categoría'); await page.fill('#dlg-in', 'Pizzas'); await page.click('dialog button:has-text("Crear")');
   await page.waitForSelector('.cat');
   await page.click('text=Agregar producto').catch(async () => { await page.click('.cat >> text=/Agregar|Nuevo/'); });
@@ -107,11 +107,14 @@ async function login(page, email) {
   ok('básico: destacado bloqueado', await page.locator('#f-ft').count() === 0 && await page.locator('dialog .lock-note').count() === 1);
   await page.fill('#f-name', 'Cortado'); await page.fill('#f-price', '2000'); await page.click('dialog button:has-text("Crear producto")'); await page.waitForSelector('text=Cortado');
   await page.fill('#b-wa', '5491122334455'); await page.click('text=Guardar datos'); await page.waitForTimeout(300);
+  await page.click('.tab[data-k=pagos]'); await page.waitForSelector('#pm-efectivo');
+  await page.check('#pm-credito'); await page.click('text=Guardar métodos de pago'); await page.waitForSelector('.toast >> text=Métodos de pago guardados');
   await page.click('.tab:has-text("Promociones")');
   ok('básico: promociones bloqueadas', await page.locator('.lock-note').count() === 1 && await page.locator('#pr-t').count() === 0);
   await page.click('.tab:has-text("Menú")'); await page.click('text=Publicar cambios'); await page.waitForSelector('text=Tu menú está al día');
   const pub = await newPage(); await pub.goto(`${base}/res-bas`); await pub.waitForSelector('.menu');
   ok('básico público: sin carrito, con consulta por WhatsApp', await pub.locator('.m-add').count() === 0 && await pub.locator('.m-bar a.m-btn').count() === 1);
+  ok('básico: medios de pago en el menú', /Medios de pago: Efectivo · Tarjeta de crédito/.test(await pub.textContent('.m-pay')));
   ok('básico: enlace de consulta', (await pub.getAttribute('.m-bar a.m-btn', 'href')).startsWith('https://wa.me/5491122334455?text='));
 }
 // ---- Premium: pedidos nativos ----
@@ -126,9 +129,16 @@ async function login(page, email) {
   await page.click('.tab[data-k=pedidos]'); await page.waitForSelector('.state-bar button');
   await page.click('.sub .tab:has-text("Mesas")'); await page.fill('#t-c', '3'); await page.click('text=Crear mesas'); await page.waitForSelector('.promo-row');
   ok('mesas creadas', await page.locator('.promo-row').count() === 3);
-  await page.click('.sub .tab:has-text("Ajustes")'); await page.check('#a-del'); await page.fill('#a-fee', '1500'); await page.check('#a-p-transferencia');
+  await page.click('.sub .tab:has-text("Ajustes")'); await page.check('#a-del'); await page.fill('#a-fee', '1500');
   await page.click('text=Guardar ajustes'); await page.waitForSelector('.toast >> text=Ajustes guardados');
   await page.click('.state-bar button:has-text("Abrir")'); await page.waitForSelector('.state-bar .b-activo');
+  await page.click('.tab[data-k=pagos]'); await page.waitForSelector('#pm-efectivo');
+  await page.check('#pm-debito'); await page.check('#pm-combinado'); await page.waitForSelector('.pay-combo:not(.hidden)');
+  await page.click('text=Guardar métodos de pago'); await page.waitForTimeout(200);
+  ok('pagos: combinado exige 2 combinaciones', await page.locator('.form-error:not(.hidden)').count() === 1);
+  await page.check('#pc-efectivo'); await page.check('#pc-debito'); await page.click('text=Guardar métodos de pago'); await page.waitForSelector('.toast >> text=Métodos de pago guardados');
+  await page.screenshot({ path: '/tmp/e2e-pagos-tab.png' });
+  ok('pagos guardados en el servidor', JSON.stringify(w.t.restaurant_payment_settings.find((x) => x.methods.includes('combinado'))?.combo_options) === '["efectivo","debito"]');
   await page.click('.tab[data-k=qr]'); await page.waitForSelector('.qr-table canvas');
   ok('QR por mesa', await page.locator('.qr-table canvas').count() === 3);
   const mesaId = w.t.restaurant_tables[0].id;
@@ -140,18 +150,27 @@ async function login(page, email) {
   await cli.selectOption('#o-type', 'take_away'); await cli.click('text=Confirmar pedido');
   await cli.waitForSelector('[data-f=customer_phone] .m-field-err:not(.hidden)');
   ok('pedido: errores por campo', (await cli.locator('[data-f=customer_name] .m-field-err:not(.hidden)').count()) === 1);
-  await cli.selectOption('#o-type', 'mesa'); await cli.fill('#o-name', 'Ana'); await cli.click('text=Confirmar pedido');
+  ok('pago: opciones del cliente', (await cli.locator('#o-pay option').allTextContents()).join('|') === 'Elegí…|Efectivo|Tarjeta de débito|Combinado');
+  ok('pago: menú muestra medios', /Medios de pago: Efectivo · Tarjeta de débito · Combinado/.test(await cli.textContent('.m-pay')));
+  await cli.selectOption('#o-type', 'mesa'); await cli.fill('#o-name', 'Ana');
+  await cli.selectOption('#o-pay', 'combinado'); await cli.waitForSelector('.m-combo:visible');
+  await cli.check('#o-combo-efectivo'); await cli.click('text=Confirmar pedido');
+  await cli.waitForSelector('[data-f=payment_combo] .m-field-err:not(.hidden)');
+  ok('pago: combinado pide al menos dos', true);
+  await cli.check('#o-combo-debito'); await cli.locator('#o-pay').scrollIntoViewIfNeeded(); await cli.screenshot({ path: '/tmp/e2e-pago.png' }); await cli.click('text=Confirmar pedido');
   await cli.waitForSelector('.m-order-num');
   ok('pedido: confirmado y seguimiento', (await cli.textContent('.m-order-num')) === 'Pedido #1' && /Esperando/.test(await cli.textContent('.m-order-status')), await cli.textContent('.m-order-status'));
   ok('seguimiento sin texto suelto', !/\bfalse\b|undefined|null/.test(await cli.textContent('dialog.m-cart')));
   await cli.screenshot({ path: '/tmp/e2e-pedido.png' });
   const o = w.t.orders[0];
   ok('servidor: total y mesa', o.total === 19000 && o.table_label === 'Mesa 1');
+  ok('servidor: pago combinado guardado', o.payment_method === 'combinado' && JSON.stringify(o.payment_combo) === '["efectivo","debito"]');
 
   // el dueño recibe el aviso por sondeo (≤ 15 s)
   await page.click('.tab[data-k=pedidos]'); await page.click('.sub .tab:has-text("Cola")');
   await page.waitForSelector('.order.st-nuevo', { timeout: 20000 });
   ok('cola: llega el pedido', (await page.locator('.order.st-nuevo').textContent()).includes('Muzzarella'));
+  ok('cola: muestra el pago combinado', (await page.locator('.order.st-nuevo').textContent()).includes('Combinado (Efectivo + Tarjeta de débito)'));
   ok('cola: insignia en la pestaña', /Pedidos \(1\)/.test(await page.textContent('.tab[data-k=pedidos]')));
   await page.click('text=Aceptar y preparar'); await page.waitForSelector('.order.st-en_preparacion');
   await page.screenshot({ path: '/tmp/e2e-cola.png', fullPage: true });

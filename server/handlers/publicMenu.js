@@ -2,6 +2,7 @@ import { json, HttpError } from '../lib/http.js';
 import { isSlugFormat } from '../lib/validate.js';
 import { publicShape } from '../lib/publicShape.js';
 import { orderingView } from '../lib/orders.js';
+import { paymentsView } from '../lib/payments.js';
 import { findTable } from './publicOrders.js';
 
 // Menú público: sin sesión. Solo expone la ÚLTIMA instantánea publicada de
@@ -18,6 +19,8 @@ export async function publicMenu({ request, db, params }) {
   // Pedidos nativos (Premium): configuración EN VIVO; ?mesa=<id> identifica la mesa.
   const mesa = new URL(request.url).searchParams.get('mesa');
   const [row] = await db.rest('restaurant_ordering', { query: { select: '*', restaurant_id: `eq.${r.id}` } });
-  const ordering = orderingView(row, r.plan, mesa ? await findTable(db, r.id, mesa) : null);
-  return json({ ...publicShape(v.snapshot, r.plan, db, { ordering }), slug, published_at: v.published_at }, 200, { 'cache-control': 'public, max-age=30' });
+  const [payRow] = await db.rest('restaurant_payment_settings', { query: { select: 'methods,combo_options', restaurant_id: `eq.${r.id}` } });
+  const payments = paymentsView(payRow);
+  const ordering = orderingView(row, r.plan, mesa ? await findTable(db, r.id, mesa) : null, payments);
+  return json({ ...publicShape(v.snapshot, r.plan, db, { ordering, payments }), slug, published_at: v.published_at }, 200, { 'cache-control': 'public, max-age=30' });
 }
