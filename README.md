@@ -121,3 +121,6 @@ Cómo se probó: tests automáticos (`npm test`), más `node test/e2e/navegador.
 Un local que nunca configuró nada: no muestra medios en el menú y, si es Premium, sus pedidos aceptan solo Efectivo hasta que configure.
 
 **Cómo se probó:** tests automáticos (`npm test`: validación, combinaciones, planes, aislamiento, cambios en vivo) y navegador real (`node test/e2e/navegador.mjs`: pestaña en Básico y Premium, error de combinado con menos de dos, pedido por mesa con combinado, y la cola mostrándolo). **No verificado por mí:** la migración 0006 y `pedidos.sql` en un Postgres real.
+
+
+
