@@ -133,3 +133,5 @@ No requiere migración nueva. Subí los archivos a `main`, esperá el deploy de 
 
 Verificado: 99 pruebas automáticas (`npm test`), prueba de navegador `node test/e2e/navegador.mjs` (recorte con dimensiones reales de lo subido, portada detrás de logo/nombre, sin errores de CSP) y prueba de navegador del panel admin contra una API simulada.
 No verificado: borrado real de usuarios/imágenes y cambio de correo contra Supabase real (el servidor usa los endpoints admin de GoTrue/Storage, probados solo con simulación), y comportamiento con dedos en teléfonos reales (el arrastre usa eventos de puntero; el zoom es con el control deslizante, sin pellizco).
+
+
