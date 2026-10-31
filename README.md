@@ -134,4 +134,15 @@ No requiere migración nueva. Subí los archivos a `main`, esperá el deploy de 
 Verificado: 99 pruebas automáticas (`npm test`), prueba de navegador `node test/e2e/navegador.mjs` (recorte con dimensiones reales de lo subido, portada detrás de logo/nombre, sin errores de CSP) y prueba de navegador del panel admin contra una API simulada.
 No verificado: borrado real de usuarios/imágenes y cambio de correo contra Supabase real (el servidor usa los endpoints admin de GoTrue/Storage, probados solo con simulación), y comportamiento con dedos en teléfonos reales (el arrastre usa eventos de puntero; el zoom es con el control deslizante, sin pellizco).
 
+## Etapa 4e — Más colores en el diseño y borrado de datos de clientes
 
+**Activación:** (1) en Supabase → SQL Editor, pegá y ejecutá `supabase/migrations/0007_borrado_datos_clientes.sql`; (2) subí los archivos a `main`, esperá el deploy y recargá sin caché.
+
+- **Diseño (Profesional y Premium)** — colores nuevos, todos opcionales ("Restaurar" vuelve al de la plantilla):
+  nombre y descripción del restaurante; burbuja de promociones y su texto (si solo elegís la burbuja, el texto se pone claro u oscuro solo); categorías + nombre y descripción de los platos (un solo color); línea de cada categoría + precio (un solo color); burbuja de cada plato con control de opacidad (10–100 %, por defecto 60 %).
+  Se validan en el servidor: plan (Básico → 403), formato y legibilidad (contraste ≥ 4,5 para textos, ≥ 3 para línea/precio, calculado sobre la burbuja ya mezclada con su transparencia). Si se baja de plan, o una combinación guardada no se lee, el menú publicado vuelve a los valores de la plantilla. No hay migración para esto (se guarda dentro del diseño existente).
+  Límite conocido: el color del nombre y descripción no se valida contra la portada (puede ser cualquier foto); revisá la vista previa.
+- **Privacidad** — la función `purge_customer_data(90)` vacía nombre, teléfono, dirección y aclaraciones de los pedidos con más de 90 días y registra `personal_data_purged_at`. Se programa una vez por día (06:15 UTC) con `pg_cron`. Se conservan productos, cantidades, totales, mesa, medio de pago y fechas. Se avisa en la pestaña Historial del panel.
+  Honestidad: la migración y su prueba SQL (`supabase/tests/pedidos.sql`, sección 8) **no se pudieron ejecutar acá** (no hay PostgreSQL); corré `pedidos.sql` y comprobá que diga `PEDIDOS OK`. Si el script avisa que no pudo programar la tarea, activá `pg_cron` en Database → Extensions. Los mensajes enviados por WhatsApp quedan en los teléfonos y no se borran desde acá.
+
+Verificado: 104 pruebas automáticas y prueba de navegador (colores aplicados al menú, guardado, bloqueo de combinaciones ilegibles).

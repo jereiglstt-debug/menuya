@@ -164,6 +164,31 @@ do $$ declare n int; begin
     raise exception 'FALLO: A pudo ejecutar set_order_status'; exception when insufficient_privilege then null; end;
 end $$;
 
+-- 8) Borrado de datos personales a los 90 días (migración 0007).
+reset role;
+do $$
+declare v_old uuid; v_new uuid; v_n integer; v_tot numeric;
+begin
+  select id, total into v_old, v_tot from public.orders where restaurant_id = 'bbbbbbbb-1111-4000-8000-00000000000a' order by number limit 1;
+  select id into v_new from public.orders where restaurant_id = 'bbbbbbbb-1111-4000-8000-00000000000a' order by number desc limit 1;
+  if v_old = v_new then raise exception 'FALLO: el test necesita 2 pedidos del restaurante A'; end if;
+  update public.orders set created_at = now() - interval '91 days' where id = v_old;
+  v_n := public.purge_customer_data(90);
+  if v_n < 1 then raise exception 'FALLO: no purgó el pedido viejo'; end if;
+  if exists (select 1 from public.orders where id = v_old and (customer_name <> '' or customer_phone <> '' or address <> '' or note <> '')) then
+    raise exception 'FALLO: quedaron datos personales en el pedido viejo'; end if;
+  if (select total from public.orders where id = v_old) <> v_tot then raise exception 'FALLO: cambió el total'; end if;
+  if not exists (select 1 from public.order_items where order_id = v_old) then raise exception 'FALLO: se perdieron los productos'; end if;
+  if (select personal_data_purged_at from public.orders where id = v_new) is not null then raise exception 'FALLO: purgó un pedido reciente'; end if;
+  begin perform public.purge_customer_data(1); raise exception 'FALLO: aceptó un plazo de 1 día';
+  exception when sqlstate 'P0001' then null; end;
+end $$;
+set local role authenticated;
+do $$ begin
+  begin perform public.purge_customer_data(90); raise exception 'FALLO: authenticated pudo ejecutar purge_customer_data';
+  exception when insufficient_privilege then null; end;
+end $$;
+
 -- 7) Visitante sin sesión: nada.
 reset role;
 set local role anon;

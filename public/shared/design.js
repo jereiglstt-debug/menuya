@@ -44,6 +44,17 @@ export function contrast(a, b) {
 }
 export const textOn = (hex) => (contrast(hex, '#ffffff') >= contrast(hex, '#000000') ? '#ffffff' : '#000000');
 
+// Colores opcionales (null = "como la plantilla"). Todos exigen plan con diseño avanzado.
+export const EXTRA_COLORS = ['name_color', 'promo_bg', 'promo_text', 'cat_text', 'price_color', 'item_bg'];
+export const DEFAULT_ITEM_OPACITY = 60;
+const isOpacity = (v) => Number.isInteger(v) && v >= 10 && v <= 100;
+const toOpacity = (v) => (typeof v === 'string' && /^\d{1,3}$/.test(v) ? Number(v) : v);
+// Mezcla fg sobre bg con opacidad alpha (0–1); devuelve #rrggbb.
+export function blend(fg, bg, alpha) {
+  const a = rgb(fg), b = rgb(bg);
+  return '#' + a.map((v, i) => Math.round(v * alpha + b[i] * (1 - alpha)).toString(16).padStart(2, '0')).join('');
+}
+
 // ---------- resolución ----------
 // Convierte el diseño guardado (con nulos = "usar el de la plantilla") en valores concretos.
 export function resolveDesign(d = {}) {
@@ -56,6 +67,8 @@ export function resolveDesign(d = {}) {
     ink: isHex(d.ink) ? d.ink : base.ink,
     font: FONTS[d.font] ? d.font : base.font,
     card_style: CARD_STYLES[d.card_style] ? d.card_style : 'lista',
+    ...Object.fromEntries(EXTRA_COLORS.map((k) => [k, isHex(d[k]) ? d[k] : null])),
+    item_opacity: isOpacity(d.item_opacity) ? d.item_opacity : DEFAULT_ITEM_OPACITY,
   };
 }
 export const fontHref = (fontKey) => `https://fonts.googleapis.com/css2?family=${FONTS[fontKey].gf}&display=swap`;
@@ -64,6 +77,16 @@ function contrastErrors(r) {
   const e = {};
   if (contrast(r.ink, r.bg) < 4.5) e.ink = 'El texto no se lee bien sobre ese fondo. Elegí colores más contrastados.';
   if (contrast(r.accent, r.bg) < 3) e.accent = 'El color de acento se confunde con el fondo. Elegí uno más fuerte.';
+  // Burbuja de cada plato: el texto se evalúa sobre el fondo ya mezclado con la transparencia.
+  const surface = r.item_bg ? blend(r.item_bg, r.bg, r.item_opacity / 100) : r.bg;
+  const catInk = r.cat_text || r.ink;
+  if (r.cat_text && contrast(r.cat_text, r.bg) < 4.5) e.cat_text = 'El texto de categorías y platos no se lee bien sobre el fondo.';
+  else if (r.item_bg && contrast(catInk, surface) < 4.5) e[r.cat_text ? 'cat_text' : 'item_bg'] = 'El texto de los platos no se lee bien sobre esa burbuja. Elegí otro color o más transparencia.';
+  if (r.price_color && contrast(r.price_color, surface) < 3) e.price_color = 'El color de la línea y el precio se confunde con el fondo. Elegí uno más fuerte.';
+  if (r.promo_bg || r.promo_text) {
+    const pb = r.promo_bg || r.accent;
+    if (contrast(r.promo_text || textOn(pb), pb) < 4.5) e.promo_text = 'El texto de las promociones no se lee bien sobre su burbuja.';
+  }
   return e;
 }
 
@@ -87,6 +110,17 @@ export function validateDesign(input, perms) {
     if (b[key] !== null && b[key] !== undefined && b[key] !== '' && !perms.advanced) { forbidden.push(key); continue; }
     color(key);
   }
+  for (const key of EXTRA_COLORS) {
+    if (b[key] !== null && b[key] !== undefined && b[key] !== '' && !perms.advanced) { forbidden.push(key); continue; }
+    color(key);
+  }
+  {
+    const v = toOpacity(b.item_opacity);
+    if (v === null || v === undefined || v === '') out.item_opacity = null;
+    else if (!perms.advanced) forbidden.push('item_opacity');
+    else if (!isOpacity(v)) errors.item_opacity = 'La transparencia debe estar entre 10 y 100.';
+    else out.item_opacity = v;
+  }
   for (const [key, table, label] of [['font', FONTS, 'tipografía'], ['card_style', CARD_STYLES, 'estilo de tarjeta']]) {
     const v = b[key];
     if (v === null || v === undefined || v === '') { out[key] = null; continue; }
@@ -107,8 +141,10 @@ export function sanitizeDesign(stored, perms) {
     ink: perms.advanced && isHex(d.ink) ? d.ink.toLowerCase() : null,
     font: perms.advanced && FONTS[d.font] ? d.font : null,
     card_style: perms.advanced && CARD_STYLES[d.card_style] ? d.card_style : null,
+    ...Object.fromEntries(EXTRA_COLORS.map((k) => [k, perms.advanced && isHex(d[k]) ? d[k].toLowerCase() : null])),
+    item_opacity: perms.advanced && isOpacity(d.item_opacity) ? d.item_opacity : null,
   };
   // Si la combinación guardada no es legible, se vuelve a los valores de la plantilla.
-  if (Object.keys(contrastErrors(resolveDesign(out))).length) { out.accent = null; out.bg = null; out.ink = null; }
+  if (Object.keys(contrastErrors(resolveDesign(out))).length) { for (const k of ['accent', 'bg', 'ink', ...EXTRA_COLORS]) out[k] = null; out.item_opacity = null; }
   return out;
 }

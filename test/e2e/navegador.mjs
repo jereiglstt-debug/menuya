@@ -228,7 +228,7 @@ Image.new('RGBA', (300, 200), (10, 160, 80, 255)).save('${dir}/chica.png')
   await page.waitForTimeout(300);
   ok('cancelar el recorte no sube nada', w.uploads.length === n0 + 1);
   // plato
-  await page.click('.cat >> text=/Agregar|Nuevo/'); await page.fill('#f-name', 'Con foto'); await page.fill('#f-price', '100');
+  await page.click('.cat >> text=/Agregar|Nuevo/'); await page.fill('#f-name', 'Con foto'); await page.fill('#f-price', '100'); await page.fill('#f-desc', 'Con queso');
   await page.setInputFiles('dialog.wide input[type=file]', `${dir}/ancha.jpg`);
   await page.waitForSelector('dialog.crop-dlg[open]');
   await page.keyboard.press('ArrowLeft');
@@ -253,6 +253,32 @@ Image.new('RGBA', (300, 200), (10, 160, 80, 255)).save('${dir}/chica.png')
   ok('portada: ocupa todo el encabezado', inside(geo.cover, geo.hero) && geo.cover.height >= geo.hero.height - 2);
   ok('portada: logo y nombre quedan DENTRO (encima de la portada)', inside(geo.logo, geo.cover) && inside(geo.h1, geo.cover));
   await page.locator('.design-prev .m-hero').scrollIntoViewIfNeeded(); await page.screenshot({ path: '/tmp/e2e-portada-hero.png' });
+
+  // colores extra del diseño
+  await page.click('.tab:has-text("Menú")'); await page.fill('#b-desc', 'Pizzas y más'); await page.click('text=Guardar datos'); await page.waitForTimeout(400);
+  await page.click('.tab:has-text("Diseño")'); await page.waitForSelector('.design-prev .menu');
+  const setColor = (id, v) => page.evaluate(([i, val]) => { const e = document.getElementById(i); e.value = val; e.dispatchEvent(new Event('change', { bubbles: true })); }, [id, v]);
+  await setColor('c-name_color', '#ffd700'); await setColor('c-promo_bg', '#112244'); await setColor('c-cat_text', '#222222');
+  await setColor('c-price_color', '#b00020'); await setColor('c-item_bg', '#cc6600');
+  await page.fill('#c-item_opacity', '30'); await page.dispatchEvent('#c-item_opacity', 'input');
+  const cs = await page.evaluate(() => {
+    const g = (s, p) => getComputedStyle(document.querySelector(`.design-prev ${s}`))[p];
+    return { h1: g('.m-hero h1', 'color'), desc: g('.m-hero .m-desc', 'color'), promo: g('.m-promo', 'backgroundColor'), promoTxt: g('.m-promo', 'color'),
+      cat: g('.m-cat h2', 'color'), dish: g('.m-body h3', 'color'), dishDesc: g('.m-body p', 'color'),
+      line: g('.m-cat h2', 'borderBottomColor'), price: g('.m-price', 'color'), bubble: g('#m-cat-0 .m-item', 'backgroundColor') };
+  });
+  ok('colores: nombre y descripción', cs.h1 === 'rgb(255, 215, 0)' && cs.desc === 'rgb(255, 215, 0)', JSON.stringify(cs));
+  ok('colores: burbuja de promo y texto automático legible', cs.promo === 'rgb(17, 34, 68)' && cs.promoTxt === 'rgb(255, 255, 255)', JSON.stringify(cs));
+  ok('colores: categorías, nombre y descripción del plato iguales', cs.cat === 'rgb(34, 34, 34)' && cs.dish === cs.cat && cs.dishDesc === cs.cat, JSON.stringify(cs));
+  ok('colores: línea y precio iguales', cs.line === 'rgb(176, 0, 32)' && cs.price === cs.line, JSON.stringify(cs));
+  ok('colores: burbuja del plato semitransparente', /^rgba?\(.*0\.3\)$|color\(srgb/.test(cs.bubble), cs.bubble);
+  await page.locator('.design-prev').scrollIntoViewIfNeeded(); await page.screenshot({ path: '/tmp/e2e-colores.png' });
+  await page.click('text=Guardar diseño'); await page.waitForTimeout(500);
+  ok('colores: se guardan en el servidor', w.t.menu_settings.some((x) => x.design?.item_bg === '#cc6600' && x.design?.item_opacity === 30));
+  // ilegible → bloquea guardar
+  await setColor('c-cat_text', '#eeeeee'); await page.waitForTimeout(100);
+  ok('colores: ilegible bloquea el guardado', await page.locator('button:has-text("Guardar diseño")').isDisabled() && (await page.textContent('.form-error')).includes('no se lee'));
+  await setColor('c-cat_text', '#222222');
   // público tras publicar
   await page.click('.tab:has-text("Menú")'); await page.click('text=Publicar cambios'); await page.waitForSelector('text=Tu menú está al día');
   const pub = await newPage(); await pub.goto(`${base}/res-pro`); await pub.waitForSelector('.m-hero .m-cover');

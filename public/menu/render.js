@@ -20,6 +20,12 @@ function applyDesign(el, raw) {
   el.style.setProperty('--m-bg', d.bg); el.style.setProperty('--m-ink', d.ink);
   el.style.setProperty('--m-accent', d.accent); el.style.setProperty('--m-on-accent', textOn(d.accent));
   el.style.setProperty('--m-font', FONTS[d.font].css);
+  // Colores opcionales: solo se definen si el propietario los eligió.
+  const opt = (name, v) => { if (v) el.style.setProperty(name, v); };
+  opt('--m-name', d.name_color); opt('--m-cat', d.cat_text); opt('--m-price', d.price_color);
+  opt('--m-promo-bg', d.promo_bg);
+  if (d.promo_bg || d.promo_text) el.style.setProperty('--m-promo-text', d.promo_text || textOn(d.promo_bg));
+  if (d.item_bg) el.style.setProperty('--m-item-bg', `color-mix(in srgb, ${d.item_bg} ${d.item_opacity}%, transparent)`);
   loadFont(d.font);
 }
 

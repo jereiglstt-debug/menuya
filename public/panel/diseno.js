@@ -4,7 +4,7 @@
 import { h } from '/shared/core.js';
 import { renderMenu } from '/menu/render.js';
 import { cropImage } from '/panel/recorte.js';
-import { TEMPLATES, FONTS, CARD_STYLES, resolveDesign, validateDesign } from '/shared/design.js';
+import { TEMPLATES, FONTS, CARD_STYLES, resolveDesign, validateDesign, textOn, blend } from '/shared/design.js';
 
 let D = null; // borrador de diseño en pantalla (se conserva entre redibujados)
 export const resetDesign = () => { D = null; };
@@ -47,13 +47,33 @@ export function designTab({ S, api, act, toast, checkFile, IMG_TYPES, confirmDlg
       return b;
     }));
 
-  function colorField(key, label, adv) {
+  // Color que se muestra en el selector cuando el propietario todavía no eligió uno.
+  const shown = (key) => {
+    const r = resolveDesign(D);
+    if (r[key]) return r[key];
+    return ({
+      name_color: S.cover_url ? '#ffffff' : r.ink,
+      promo_bg: r.accent, promo_text: textOn(r.promo_bg || r.accent),
+      cat_text: r.ink, price_color: r.accent, item_bg: blend(r.ink, r.bg, 0.06),
+    })[key];
+  };
+  function colorField(key, label, adv, extraReset = []) {
     if (adv && !perms.advanced) return h('div', { class: 'lock-note' }, `${label}: disponible desde el plan Profesional.`);
-    const r = resolveDesign(D)[key];
-    const input = h('input', { type: 'color', id: `c-${key}`, value: r, 'aria-label': label, onchange: () => set(key, input.value) });
+    const input = h('input', { type: 'color', id: `c-${key}`, value: shown(key) || resolveDesign(D)[key], 'aria-label': label, onchange: () => set(key, input.value) });
     return h('div', { class: 'field-inline' }, h('label', { for: `c-${key}` }, label), input,
-      h('button', { type: 'button', class: 'btn small', onclick: () => { set(key, null); input.value = resolveDesign(D)[key]; } }, 'Restaurar'));
+      h('button', { type: 'button', class: 'btn small', onclick: () => { D = { ...D, [key]: null, ...Object.fromEntries(extraReset.map((k) => [k, null])) }; refresh(); input.value = shown(key) || resolveDesign(D)[key]; } }, 'Restaurar'));
   }
+  // Transparencia de la burbuja de cada plato.
+  function opacityField() {
+    const val = resolveDesign(D).item_opacity;
+    const out = h('span', { class: 'muted' }, `${val}%`);
+    const input = h('input', { type: 'range', id: 'c-item_opacity', min: '10', max: '100', step: '5', value: String(val), 'aria-label': 'Opacidad de la burbuja de cada plato',
+      oninput: () => { out.textContent = `${input.value}%`; set('item_opacity', Number(input.value)); } });
+    return h('div', { class: 'field-inline' }, h('label', { for: 'c-item_opacity' }, 'Opacidad de esa burbuja'), input, out);
+  }
+  const extraColors = (children) => perms.advanced
+    ? h('div', {}, children)
+    : h('div', { class: 'lock-note' }, 'Colores del nombre, las promociones, las categorías y los platos: disponible desde el plan Profesional.');
   function selectField(key, label, table, fmt) {
     if (!perms.advanced) return h('div', { class: 'lock-note' }, `${label}: disponible desde el plan Profesional.`);
     const sel = h('select', { id: `s-${key}`, onchange: () => set(key, sel.value || null) },
@@ -90,6 +110,17 @@ export function designTab({ S, api, act, toast, checkFile, IMG_TYPES, confirmDlg
       h('h3', {}, 'Plantilla'), tpl,
       h('h3', {}, 'Colores'),
       colorField('accent', 'Color destacado', false), colorField('bg', 'Color de fondo', true), colorField('ink', 'Color del texto', true),
+      h('h3', {}, 'Encabezado y promociones'),
+      extraColors([
+        colorField('name_color', 'Nombre y descripción del restaurante', true),
+        colorField('promo_bg', 'Burbuja de las promociones', true, ['promo_text']),
+        colorField('promo_text', 'Texto de las promociones', true)]),
+      h('h3', {}, 'Categorías y platos'),
+      extraColors([
+        colorField('cat_text', 'Categorías y nombre y descripción de los platos', true),
+        colorField('price_color', 'Línea de cada categoría y precio del plato', true),
+        colorField('item_bg', 'Burbuja de cada plato', true, ['item_opacity']),
+        opacityField()]),
       h('h3', {}, 'Letra y tarjetas'),
       selectField('font', 'Tipografía', FONTS, (f) => f.label), selectField('card_style', 'Estilo de los productos', CARD_STYLES, (s) => s),
       h('h3', {}, 'Portada'), cover,

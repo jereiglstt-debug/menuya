@@ -102,7 +102,7 @@ export function pedidosTab({ S, api, confirmDlg, inputDlg }) {
   function historial() {
     const box = h('div', {}, h('p', { class: 'empty' }, 'Cargando…'));
     api('/owner/orders?scope=history').then(({ orders }) => fill(box, orders.length ? orders.map((o) => card(o, false)) : h('p', { class: 'empty' }, 'Todavía no hay pedidos entregados o cancelados.'))).catch(fail);
-    return h('div', {}, h('p', { class: 'hint' }, 'Los últimos 60 pedidos entregados o cancelados.'), box);
+    return h('div', {}, h('p', { class: 'hint' }, 'Los últimos 60 pedidos entregados o cancelados. Por privacidad, el nombre, teléfono, dirección y aclaraciones de los clientes se borran automáticamente a los 90 días; los productos y totales se conservan para las estadísticas.'), box);
   }
 
   // ----- mesas -----
