@@ -6,6 +6,7 @@ import { renderMenu } from '/menu/render.js';
 import { designTab } from '/panel/diseno.js';
 import { qrTab } from '/panel/qrtab.js';
 import { promosTab } from '/panel/promos.js';
+import { cropImage } from '/panel/recorte.js';
 import { pagosTab } from '/panel/pagos.js';
 import { pedidosTab, startOrderAlerts, stopOrderAlerts } from '/panel/pedidos.js';
 
@@ -172,8 +173,10 @@ function businessCard() {
   const wa = h('input', { id: 'b-wa', type: 'tel', inputmode: 'numeric', maxlength: '24', autocomplete: 'off', value: S.settings.whatsapp ?? '' });
   const file = h('input', { type: 'file', accept: IMG_TYPES.join(','), class: 'hidden', 'aria-label': 'Elegir logotipo', onchange: async () => {
     const f = file.files[0]; if (!f) return;
-    const bad = checkFile(f); if (bad) return toast(bad);
-    await act(() => api('/owner/logo', { method: 'POST', raw: f, type: f.type }), 'Logotipo actualizado');
+    const bad = checkFile(f); if (bad) { file.value = ''; return toast(bad); }
+    let blob; try { blob = await cropImage({ file: f, aspect: 1, outW: 600, shape: 'circle', title: 'Ajustar logotipo' }); } catch (e) { file.value = ''; return toast(e.message); }
+    file.value = ''; if (!blob) return;
+    await act(() => api('/owner/logo', { method: 'POST', raw: blob, type: blob.type }), 'Logotipo actualizado');
   } });
   return h('section', { class: 'card' },
     h('div', { class: 'card-h' }, h('h2', {}, 'Tu negocio')),
@@ -256,12 +259,14 @@ function productDialog(p, categoryId) {
   const err = h('div', { class: 'form-error hidden', role: 'alert' });
   const fe = {}; const L = (k, id, text, el, hint) => { fe[k] = h('p', { class: 'field-error hidden' }); return h('div', {}, h('label', { for: id }, text), el, hint && h('p', { class: 'hint' }, hint), fe[k]); };
   let urlToRevoke = null;
-  f.file.addEventListener('change', () => {
+  f.file.addEventListener('change', async () => {
     const file = f.file.files[0]; if (!file) return;
     const bad = checkFile(file); if (bad) { toast(bad); f.file.value = ''; return; }
-    newFile = file; removeImage = false;
+    let blob; try { blob = await cropImage({ file, aspect: 1, outW: 900, title: 'Ajustar foto del plato' }); } catch (e) { f.file.value = ''; return toast(e.message); }
+    f.file.value = ''; if (!blob) return;
+    newFile = blob; removeImage = false;
     if (urlToRevoke) URL.revokeObjectURL(urlToRevoke);
-    urlToRevoke = URL.createObjectURL(file);
+    urlToRevoke = URL.createObjectURL(blob);
     prev.replaceChildren(h('img', { src: urlToRevoke, alt: '' }));
   });
   const btn = h('button', { class: 'btn primary', type: 'submit' }, p ? 'Guardar cambios' : 'Crear producto');
@@ -289,7 +294,7 @@ function productDialog(p, categoryId) {
       h('label', {}, 'Foto'),
       h('div', { class: 'img-row' }, prev, h('div', {},
         h('button', { class: 'btn small', type: 'button', onclick: () => f.file.click() }, 'Elegir foto'), f.file,
-        (p?.image_url) && h('button', { class: 'btn small danger ml', type: 'button', onclick: () => { removeImage = true; newFile = null; f.file.value = ''; prev.replaceChildren('Sin foto'); } }, 'Quitar foto'),
+        (p?.image_url) && h('button', { class: 'btn small danger ml', type: 'button', onclick: () => { removeImage = true; newFile = null; prev.replaceChildren('Sin foto'); } }, 'Quitar foto'),
         h('p', { class: 'hint' }, 'JPG, PNG o WebP. Hasta 2 MB.'))),
       h('label', { class: 'check', for: 'f-av' }, f.avail, 'Disponible (si lo desmarcás se muestra como “Agotado”)'),
       canFeature ? h('label', { class: 'check', for: 'f-ft' }, f.feat, 'Producto destacado (aparece arriba, en “Destacados”)') : h('p', { class: 'lock-note' }, 'Destacados: disponible desde el plan Profesional.'), err,

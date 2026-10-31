@@ -122,5 +122,14 @@ Un local que nunca configuró nada: no muestra medios en el menú y, si es Premi
 
 **Cómo se probó:** tests automáticos (`npm test`: validación, combinaciones, planes, aislamiento, cambios en vivo) y navegador real (`node test/e2e/navegador.mjs`: pestaña en Básico y Premium, error de combinado con menos de dos, pedido por mesa con combinado, y la cola mostrándolo). **No verificado por mí:** la migración 0006 y `pedidos.sql` en un Postgres real.
 
+## Etapa 4d — Editor de fotos, portada como fondo y administración
 
+No requiere migración nueva. Subí los archivos a `main`, esperá el deploy de Cloudflare y recargá con Ctrl+Shift+R (o ventana privada).
 
+- **Editor de fotos** (`public/panel/recorte.js`): al elegir logotipo, foto de un plato o portada se abre un editor para encuadrar (arrastrar) y cambiar el tamaño (zoom). La imagen se recorta y comprime en el navegador (logo 600×600, plato 900×900, portada 1280×640) y se sube igual que antes; el servidor sigue validando tipo, firma real y 2 MB. Si cancelás, no se sube nada. Se puede mover con el teclado (flechas, + y −).
+- **Portada**: ahora es el fondo del encabezado, detrás del logo y del nombre (con una capa oscura para que se lea el texto). Sin portada, el encabezado queda como antes.
+- **Administrador → Cambiar correo** (`PATCH /api/admin/restaurants/:id/owner-email`): cambia el correo de la cuenta del propietario (queda confirmado) y el registrado en el sistema. La contraseña no cambia; si no la recuerda, generá un enlace de “Recuperación”. Queda auditado (correo anterior y nuevo).
+- **Administrador → Eliminar restaurante** (`DELETE /api/admin/restaurants/:id`): hay que escribir la dirección (slug) para confirmar. Borra menú, versiones, pedidos, mesas, pagos, las imágenes del almacenamiento y la cuenta del propietario (nunca una cuenta de administrador). Es irreversible. Queda un registro de auditoría con nombre, dirección y propietario.
+
+Verificado: 99 pruebas automáticas (`npm test`), prueba de navegador `node test/e2e/navegador.mjs` (recorte con dimensiones reales de lo subido, portada detrás de logo/nombre, sin errores de CSP) y prueba de navegador del panel admin contra una API simulada.
+No verificado: borrado real de usuarios/imágenes y cambio de correo contra Supabase real (el servidor usa los endpoints admin de GoTrue/Storage, probados solo con simulación), y comportamiento con dedos en teléfonos reales (el arrastre usa eventos de puntero; el zoom es con el control deslizante, sin pellizco).

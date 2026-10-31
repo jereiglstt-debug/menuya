@@ -107,11 +107,13 @@ export function renderMenu(d) {
   const promos = d.promotions || [];
 
   const root = h('div', { class: 'menu' },
-    d.cover_url && h('img', { class: 'm-cover', src: d.cover_url, alt: '' }),
-    h('header', { class: 'm-head' },
-      d.logo_url && h('img', { class: 'm-logo', src: d.logo_url, alt: '' }),
-      h('h1', {}, d.title),
-      d.description && h('p', { class: 'm-desc' }, d.description)),
+    // La portada es el FONDO del encabezado: queda detrás del logo y del nombre.
+    h('header', { class: d.cover_url ? 'm-head m-hero' : 'm-head' },
+      d.cover_url && h('img', { class: 'm-cover', src: d.cover_url, alt: '' }),
+      h('div', { class: 'm-head-in' },
+        d.logo_url && h('img', { class: 'm-logo', src: d.logo_url, alt: '' }),
+        h('h1', {}, d.title),
+        d.description && h('p', { class: 'm-desc' }, d.description))),
     promos.length > 0 && h('section', { class: 'm-promos', 'aria-label': 'Promociones' },
       promos.map((pr) => h('div', { class: 'm-promo' }, h('strong', {}, pr.title), pr.description && h('span', {}, pr.description)))),
     (cats.length > 1 || featured.length > 0) && h('nav', { class: 'm-nav', 'aria-label': 'Categorías' },

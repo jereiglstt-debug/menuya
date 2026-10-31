@@ -1,6 +1,6 @@
 import { HttpError, readJson, json } from '../lib/http.js';
 import { requireAdmin } from '../lib/auth.js';
-import { isUuid, validateRestaurantInput, validatePaymentInput } from '../lib/validate.js';
+import { isUuid, EMAIL_RE, validateRestaurantInput, validatePaymentInput } from '../lib/validate.js';
 
 const RESTAURANT_SELECT =
   'id,slug,name,description,plan,status,created_at,restaurant_owners(email),' +
@@ -147,6 +147,60 @@ export async function accessLink({ request, db, env, params }) {
   const { link } = await db.generateLink(body.type, email, redirect);
   await audit(db, admin, body.type === 'invite' ? 'invitacion_generada' : 'recuperacion_generada', r.id);
   return json({ link, email });
+}
+
+// Cambiar el correo con el que se registró al propietario.
+export async function changeOwnerEmail({ request, db, params }) {
+  const admin = await requireAdmin(request, db);
+  const r = await getRestaurant(db, params.id);
+  const body = await readJson(request);
+  const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
+  if (!EMAIL_RE.test(email) || email.length > 254) {
+    throw new HttpError(400, 'Revisá los datos ingresados.', { email: 'Ingresá un correo electrónico válido.' });
+  }
+  const [owner] = await db.rest('restaurant_owners', { query: { select: 'user_id,email', restaurant_id: `eq.${r.id}` } });
+  if (!owner) throw new HttpError(409, 'Este restaurante no tiene propietario asignado.');
+  if (owner.email === email) throw new HttpError(400, 'Ese ya es el correo del propietario.', { email: 'Es el mismo correo actual.' });
+  await db.updateUserEmail(owner.user_id, email);
+  await db.rest('restaurant_owners', { method: 'PATCH', query: { restaurant_id: `eq.${r.id}` }, body: { email } });
+  await audit(db, admin, 'correo_propietario_cambiado', r.id, { anterior: owner.email, nuevo: email });
+  return json({ email });
+}
+
+// Eliminar un restaurante y TODO lo suyo. Irreversible: exige escribir la dirección (slug).
+export async function deleteRestaurant({ request, db, params }) {
+  const admin = await requireAdmin(request, db);
+  const r = await getRestaurant(db, params.id);
+  const body = await readJson(request);
+  if (body.confirm_slug !== r.slug) {
+    throw new HttpError(400, 'Escribí la dirección del restaurante para confirmar.', { confirm_slug: 'No coincide con la dirección.' });
+  }
+  const q = { select: '*', restaurant_id: `eq.${r.id}` };
+  const [products, settings, versions, pending, owners] = await Promise.all([
+    db.rest('products', { query: q }), db.rest('menu_settings', { query: q }),
+    db.rest('menu_versions', { query: q }), db.rest('pending_image_deletes', { query: q }),
+    db.rest('restaurant_owners', { query: { select: 'user_id', restaurant_id: `eq.${r.id}` } }),
+  ]);
+  // Todas las imágenes del restaurante viven bajo "<id>/": las tomamos de borrador, versiones y pendientes.
+  const prefix = `${r.id}/`;
+  const paths = new Set();
+  for (const m of JSON.stringify([products, settings, versions, pending]).matchAll(/"([^"\\]+)"/g)) {
+    if (m[1].startsWith(prefix)) paths.add(m[1]);
+  }
+
+  await db.rest('restaurants', { method: 'DELETE', query: { id: `eq.${r.id}` } }); // cascada: menú, pedidos, mesas, pagos…
+  await audit(db, admin, 'restaurante_eliminado', null, {
+    slug: r.slug, nombre: r.name, plan: r.plan, propietario: r.restaurant_owners?.[0]?.email ?? null,
+  });
+
+  const problems = [];
+  for (const o of owners) {
+    const isAdmin = await db.rest('platform_admins', { query: { select: 'user_id', user_id: `eq.${o.user_id}` } });
+    if (isAdmin?.length) continue; // nunca borrar una cuenta de administrador
+    try { await db.deleteUser(o.user_id); } catch { problems.push('cuenta del propietario'); }
+  }
+  try { await db.storageDelete([...paths]); } catch { problems.push('imágenes'); }
+  return json({ deleted: true, imagenes: paths.size, avisos: problems });
 }
 
 export async function listAudit({ request, db }) {

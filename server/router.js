@@ -16,6 +16,8 @@ const ROUTES = [
   ['POST',  /^\/admin\/restaurants$/,              admin.createRestaurant],
   ['GET',   /^\/admin\/restaurants\/([^/]+)$/,     admin.getRestaurantDetail],
   ['PATCH', /^\/admin\/restaurants\/([^/]+)$/,     admin.updateRestaurant],
+  ['DELETE', /^\/admin\/restaurants\/([^/]+)$/,    admin.deleteRestaurant],
+  ['PATCH', /^\/admin\/restaurants\/([^/]+)\/owner-email$/, admin.changeOwnerEmail],
   ['POST',  /^\/admin\/restaurants\/([^/]+)\/payments$/,    admin.registerPayment],
   ['POST',  /^\/admin\/restaurants\/([^/]+)\/access-link$/, admin.accessLink],
   ['GET',   /^\/admin\/audit$/,                    admin.listAudit],

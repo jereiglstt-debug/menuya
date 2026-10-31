@@ -10,7 +10,7 @@ export const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0
 export function makeWorld() {
   const t = { restaurants: [], restaurant_owners: [], platform_admins: [], categories: [], products: [], menu_settings: [], menu_versions: [], pending_image_deletes: [], audit_log: [], promotions: [],
     restaurant_ordering: [], restaurant_payment_settings: [], restaurant_tables: [], orders: [], order_items: [], order_status_history: [] };
-  const storage = new Map(); const users = {}; let tick = 0;
+  const uploads = []; const storage = new Map(); const users = {}; let tick = 0;
   const now = () => new Date(Date.UTC(2026, 9, 28, 12, 0, tick++)).toISOString();
   const reply = (d, s = 200) => new Response(d === undefined ? null : JSON.stringify(d), { status: s });
   const touch = (rid) => { const r = t.restaurants.find((x) => x.id === rid); if (r) r.draft_changed_at = now(); };
@@ -86,7 +86,7 @@ export function makeWorld() {
     if (p.startsWith('/rest/v1/rpc/')) return rpc(p.split('/').pop(), body);
     if (p === '/storage/v1/object/copy') { const ok = storage.has(body.sourceKey); if (ok) storage.set(body.destinationKey, storage.get(body.sourceKey)); return reply({}, ok ? 200 : 404); }
     if (p === '/storage/v1/object/menu-images' && method === 'DELETE') { body.prefixes.forEach((x) => storage.delete(x)); return reply([]); }
-    if (p.startsWith('/storage/v1/object/menu-images/') && method === 'POST') { const k = p.replace('/storage/v1/object/menu-images/', ''); if (storage.has(k)) return reply({}, 409); storage.set(k, body.length); return reply({ Key: k }); }
+    if (p.startsWith('/storage/v1/object/menu-images/') && method === 'POST') { const k = p.replace('/storage/v1/object/menu-images/', ''); if (storage.has(k)) return reply({}, 409); storage.set(k, body.length); uploads.push({ key: k, bytes: Buffer.from(body) }); return reply({ Key: k }); }
     const m = p.match(/^\/rest\/v1\/(\w+)$/); if (!m || !t[m[1]]) return reply({ message: 'sin ruta' }, 404);
     const tbl = m[1]; const rows = t[tbl]; const wantRows = /representation/.test(init.headers?.prefer || '');
     if (method === 'GET') { let r = sorted(rows.filter((x) => match(x, u)), u.searchParams.get('order')); if (u.searchParams.get('limit')) r = r.slice(0, +u.searchParams.get('limit')); return reply(r.map((x) => ({ ...x }))); }
@@ -114,5 +114,5 @@ export function makeWorld() {
     const res = await handle(new Request(`https://menuya.pages.dev/api${path}`, { method, headers, body: b }), ENV, fetchImpl);
     return { status: res.status, body: await res.json().catch(() => null) };
   }
-  return { t, storage, addUser, addRestaurant, call };
+  return { t, storage, uploads, addUser, addRestaurant, call };
 }

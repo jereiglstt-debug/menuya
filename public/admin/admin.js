@@ -155,7 +155,11 @@ function viewDetail() {
       h('p', { class: 'muted' }, 'Generá un enlace de un solo uso y envialo vos al propietario. Si todavía no aceptó la invitación usá “Invitación”; si olvidó su contraseña usá “Recuperación”.'),
       h('div', { class: 'actions' },
         h('button', { class: 'btn', onclick: () => showLink(r, 'invite') }, 'Invitación'),
-        h('button', { class: 'btn', onclick: () => showLink(r, 'recovery') }, 'Recuperación'))),
+        h('button', { class: 'btn', onclick: () => showLink(r, 'recovery') }, 'Recuperación'),
+        h('button', { class: 'btn', onclick: () => changeEmailDlg(r, act) }, 'Cambiar correo'))),
+    h('div', { class: 'section' }, h('h3', {}, 'Zona peligrosa'),
+      h('p', { class: 'muted' }, 'Eliminar borra el restaurante con su menú, fotos, pedidos, mesas y pagos, y la cuenta del propietario. No se puede deshacer.'),
+      h('div', { class: 'actions' }, h('button', { class: 'btn danger', onclick: () => deleteDlg(r) }, 'Eliminar restaurante'))),
     h('div', { class: 'section' }, h('h3', {}, 'Registrar pago'), paymentForm(r, act)),
     h('div', { class: 'section' }, h('h3', {}, 'Pagos registrados'),
       payments.length ? h('div', { class: 'scroll' }, h('table', {},
@@ -203,6 +207,42 @@ function confirmDlg(title, text, okLabel, onOk) {
     h('div', { class: 'actions' },
       h('button', { class: 'btn danger', onclick: () => { d.close(); onOk(); } }, okLabel),
       h('button', { class: 'btn', onclick: () => d.close(), autofocus: true }, 'Cancelar')));
+}
+function changeEmailDlg(r, act) {
+  const input = h('input', { id: 'newemail', type: 'email', autocomplete: 'off', required: true, value: r.owner_email || '' });
+  const err = h('div', { class: 'form-error hidden', role: 'alert' });
+  const d = dialog(h('h2', {}, 'Cambiar correo del propietario'),
+    h('p', {}, `Hoy es ${r.owner_email || '—'}. Con el correo nuevo va a iniciar sesión. La contraseña no cambia: si no la recuerda, generá un enlace de “Recuperación” después del cambio.`),
+    h('form', { onsubmit: async (ev) => {
+      ev.preventDefault(); err.classList.add('hidden');
+      try {
+        await api(`/admin/restaurants/${r.id}/owner-email`, { method: 'PATCH', body: { email: input.value } });
+        d.close(); await act(async () => {}, 'Correo actualizado');
+      } catch (e) { if (e.message === 'sesión') return; err.textContent = e.details?.email || e.message; err.classList.remove('hidden'); }
+    } },
+      h('label', { for: 'newemail' }, 'Correo nuevo'), input, err,
+      h('div', { class: 'actions' }, h('button', { class: 'btn primary', type: 'submit' }, 'Guardar'),
+        h('button', { class: 'btn', type: 'button', onclick: () => d.close() }, 'Cancelar'))));
+  input.focus(); input.select();
+}
+function deleteDlg(r) {
+  const input = h('input', { id: 'delslug', autocomplete: 'off', 'aria-label': 'Dirección para confirmar' });
+  const err = h('div', { class: 'form-error hidden', role: 'alert' });
+  const ok = h('button', { class: 'btn danger', type: 'submit', disabled: true }, 'Eliminar para siempre');
+  input.addEventListener('input', () => { ok.disabled = input.value.trim() !== r.slug; });
+  const d = dialog(h('h2', {}, `¿Eliminar “${r.name}”?`),
+    h('p', {}, `Se borran el menú, las fotos, los pedidos, las mesas y los pagos, y la cuenta de ${r.owner_email || 'su propietario'}. Los códigos QR impresos dejan de funcionar. No hay vuelta atrás.`),
+    h('form', { onsubmit: async (ev) => {
+      ev.preventDefault(); err.classList.add('hidden'); ok.disabled = true;
+      try {
+        const out = await api(`/admin/restaurants/${r.id}`, { method: 'DELETE', body: { confirm_slug: input.value.trim() } });
+        d.close(); S.selected = null; S.detail = null; await loadList(); render();
+        toast(out.avisos?.length ? `Eliminado, pero revisá: ${out.avisos.join(', ')}` : 'Restaurante eliminado');
+      } catch (e) { if (e.message === 'sesión') return; err.textContent = e.message; err.classList.remove('hidden'); ok.disabled = false; }
+    } },
+      h('label', { for: 'delslug' }, `Para confirmar, escribí la dirección: ${r.slug}`), input, err,
+      h('div', { class: 'actions' }, ok, h('button', { class: 'btn', type: 'button', onclick: () => d.close() }, 'Cancelar'))));
+  input.focus();
 }
 async function showLink(r, type) {
   try {

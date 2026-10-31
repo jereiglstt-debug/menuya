@@ -102,6 +102,21 @@ export function createDb(env, fetchImpl = fetch) {
     },
     publicUrl: (path) => (path ? `${base}/storage/v1/object/public/menu-images/${path}` : null),
 
+    // Cambia el correo de una cuenta ya creada (queda confirmado: lo cambia el administrador).
+    async updateUserEmail(userId, email) {
+      const { res, data } = await call(`${base}/auth/v1/admin/users/${userId}`, {
+        method: 'PUT', headers: svc, body: JSON.stringify({ email, email_confirm: true }),
+      });
+      if (!res.ok) {
+        const msg = data?.msg || data?.message || data?.error_description || '';
+        if (res.status === 422 || res.status === 409 || /already|registered|exists|duplicate/i.test(msg)) {
+          throw new HttpError(409, 'Ese correo ya tiene otra cuenta.');
+        }
+        console.error('Error al cambiar correo:', res.status);
+        throw new HttpError(502, 'No se pudo cambiar el correo.');
+      }
+    },
+
     async deleteUser(userId) {
       await call(`${base}/auth/v1/admin/users/${userId}`, { method: 'DELETE', headers: svc });
     },

@@ -3,6 +3,7 @@
 // validar todo al guardar, así que ocultar controles NO es la protección.
 import { h } from '/shared/core.js';
 import { renderMenu } from '/menu/render.js';
+import { cropImage } from '/panel/recorte.js';
 import { TEMPLATES, FONTS, CARD_STYLES, resolveDesign, validateDesign } from '/shared/design.js';
 
 let D = null; // borrador de diseño en pantalla (se conserva entre redibujados)
@@ -63,11 +64,13 @@ export function designTab({ S, api, act, toast, checkFile, IMG_TYPES, confirmDlg
 
   const file = h('input', { type: 'file', accept: IMG_TYPES.join(','), class: 'hidden', 'aria-label': 'Elegir portada', onchange: async () => {
     const f = file.files[0]; if (!f) return;
-    const bad = checkFile(f); if (bad) return toast(bad);
-    await act(() => api('/owner/cover', { method: 'POST', raw: f, type: f.type }), 'Portada actualizada en el borrador');
+    const bad = checkFile(f); if (bad) { file.value = ''; return toast(bad); }
+    let blob; try { blob = await cropImage({ file: f, aspect: 2, outW: 1280, title: 'Ajustar portada' }); } catch (e) { file.value = ''; return toast(e.message); }
+    file.value = ''; if (!blob) return;
+    await act(() => api('/owner/cover', { method: 'POST', raw: blob, type: blob.type }), 'Portada actualizada en el borrador');
   } });
   const cover = perms.advanced
-    ? h('div', {}, h('p', { class: 'm0' }, 'Imagen de portada (arriba del menú)'),
+    ? h('div', {}, h('p', { class: 'm0' }, 'Imagen de portada (fondo detrás del logo y el nombre)'),
         h('button', { class: 'btn small', onclick: () => file.click() }, S.cover_url ? 'Cambiar portada' : 'Subir portada'), file,
         S.cover_url && h('button', { class: 'btn small danger ml', onclick: () => confirmDlg('¿Quitar la portada?', 'Dejará de mostrarse cuando publiques.', 'Quitar', () => act(() => api('/owner/cover', { method: 'DELETE' }), 'Portada quitada')) }, 'Quitar'),
         h('p', { class: 'hint' }, 'JPG, PNG o WebP, hasta 2 MB. Mejor si es apaisada.'))

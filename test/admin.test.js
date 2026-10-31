@@ -137,3 +137,55 @@ test('/api/config rechaza SUPABASE_URL igual al propio sitio', async () => {
   assert.equal(res.status, 500);
   assert.match(JSON.stringify(await res.json()), /mismo sitio/);
 });
+
+async function crear(call) {
+  const res = await call('POST', '/admin/restaurants', { token: ADMIN_TOKEN, body: NEW });
+  return (await res.json()).restaurant;
+}
+
+test('cambiar correo del propietario: solo admin, valida, evita duplicados y audita', async () => {
+  const { call, state } = makeFake();
+  const r = await crear(call);
+  const url = `/admin/restaurants/${r.id}/owner-email`;
+  assert.equal((await call('PATCH', url, { token: OWNER_TOKEN, body: { email: 'a@b.com' } })).status, 403);
+  assert.equal((await call('PATCH', url, { token: ADMIN_TOKEN, body: { email: 'malo' } })).status, 400);
+  assert.equal((await call('PATCH', url, { token: ADMIN_TOKEN, body: { email: 'pepe@mail.com' } })).status, 400);
+  state.takenEmails.push('ocupado@x.com');
+  assert.equal((await call('PATCH', url, { token: ADMIN_TOKEN, body: { email: 'ocupado@x.com' } })).status, 409);
+  assert.equal(state.owners[0].email, 'pepe@mail.com');
+  const ok = await call('PATCH', url, { token: ADMIN_TOKEN, body: { email: ' Nuevo@Mail.com ' } });
+  assert.equal(ok.status, 200);
+  assert.equal(state.owners[0].email, 'nuevo@mail.com');
+  assert.equal(state.emailChanges[0].email, 'nuevo@mail.com');
+  assert.equal(state.emailChanges[0].email_confirm, true);
+  const a = state.audit.at(-1);
+  assert.equal(a.action, 'correo_propietario_cambiado');
+  assert.deepEqual([a.details.anterior, a.details.nuevo], ['pepe@mail.com', 'nuevo@mail.com']);
+});
+
+test('eliminar restaurante: exige confirmar el slug, borra datos, cuenta e imágenes', async () => {
+  const { call, state } = makeFake();
+  const r = await crear(call);
+  const otro = await (await call('POST', '/admin/restaurants', { token: ADMIN_TOKEN, body: { ...NEW, slug: 'otro', owner_email: 'otro@mail.com' } })).json();
+  state.tables = {
+    products: [{ image_path: `${r.id}/a.jpg` }],
+    menu_settings: [{ logo_path: `${r.id}/logo.png`, cover_path: `${r.id}/cover.jpg` }],
+    menu_versions: [{ snapshot: { categories: [{ products: [{ image_path: `${r.id}/vieja.jpg` }] }] } }],
+    pending_image_deletes: [{ path: `${r.id}/pend.jpg` }],
+  };
+  const url = `/admin/restaurants/${r.id}`;
+  assert.equal((await call('DELETE', url, { token: OWNER_TOKEN, body: { confirm_slug: 'don-pepe' } })).status, 403);
+  assert.equal((await call('DELETE', url, { token: ADMIN_TOKEN, body: { confirm_slug: 'otro-slug' } })).status, 400);
+  assert.equal(state.restaurants.length, 2);
+  const res = await call('DELETE', url, { token: ADMIN_TOKEN, body: { confirm_slug: 'don-pepe' } });
+  assert.equal(res.status, 200);
+  assert.deepEqual(state.restaurants.map((x) => x.slug), ['otro']);
+  assert.equal(state.owners.length, 1);
+  assert.equal(state.owners[0].restaurant_id, otro.restaurant.id);
+  assert.equal(state.deletedUsers.length, 1);
+  assert.deepEqual(state.storageDeleted.sort(), ['a.jpg', 'cover.jpg', 'logo.png', 'pend.jpg', 'vieja.jpg'].map((f) => `${r.id}/${f}`).sort());
+  const a = state.audit.at(-1);
+  assert.equal(a.action, 'restaurante_eliminado');
+  assert.equal(a.details.slug, 'don-pepe');
+  assert.equal((await call('DELETE', url, { token: ADMIN_TOKEN, body: { confirm_slug: 'don-pepe' } })).status, 404);
+});

@@ -29,8 +29,13 @@
 @media (max-width:420px){.m-img{width:76px;height:76px}.m-item{gap:10px;padding:10px}}
 
 /* Portada */
-.m-cover{display:block;width:calc(100% + 32px);margin:0 -16px;height:180px;object-fit:cover;background:var(--m-line)}
-.m-cover + .m-head{padding-top:20px}
+.m-hero{position:relative;overflow:hidden;width:calc(100% + 32px);margin:0 -16px;padding:40px 16px 28px;min-height:230px;display:flex;align-items:center;justify-content:center;background:#2a2622;color:#fff}
+.m-cover{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:0}
+.m-hero::after{content:"";position:absolute;inset:0;z-index:1;background:linear-gradient(rgba(0,0,0,.45),rgba(0,0,0,.6))}
+.m-head-in{position:relative;z-index:2;max-width:100%}
+.m-hero h1{color:#fff;text-shadow:0 1px 6px rgba(0,0,0,.6)}
+.m-hero .m-desc{color:rgba(255,255,255,.92);text-shadow:0 1px 4px rgba(0,0,0,.6)}
+.m-hero .m-logo{border:3px solid #fff;box-shadow:0 2px 10px rgba(0,0,0,.4);background:#fff}
 .m-tag{background:var(--m-line);color:var(--m-ink)}
 /* Plantillas */
 .menu[data-template=minimalista] .m-item{border:0;border-bottom:1px solid var(--m-line);border-radius:0;background:transparent;padding:12px 0}

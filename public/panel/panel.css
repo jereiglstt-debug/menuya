@@ -85,3 +85,10 @@ dialog.wide{width:min(720px,96vw);max-height:92vh;overflow:auto}
 .qr-tables{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:1rem}
 .qr-table{display:flex;flex-direction:column;align-items:center;gap:.4rem}
 .qr-canvas.small{width:100%}
+
+/* Editor de fotos */
+dialog.crop-dlg{width:min(400px,96vw);max-height:94vh;overflow:auto}
+.crop-box{display:flex;justify-content:center;margin:.6rem 0}
+.crop-canvas{max-width:100%;border-radius:10px;border:1px solid var(--line);touch-action:none;cursor:grab;background:#fff}
+.crop-canvas.grab{cursor:grabbing}
+.crop-zoom{width:100%}

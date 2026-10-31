@@ -24,6 +24,11 @@ const server = http.createServer(async (req, res) => {
     const b = JSON.parse(buf.toString()); const t = tokens[b.email];
     return t ? send(200, JSON.stringify({ access_token: t, refresh_token: 'r', expires_in: 3600 })) : send(400, '{}');
   }
+  if (u.pathname.startsWith('/storage/v1/object/public/menu-images/')) {
+    const k = decodeURIComponent(u.pathname.replace('/storage/v1/object/public/menu-images/', ''));
+    const up = [...w.uploads].reverse().find((x) => x.key === k);
+    return up ? send(200, up.bytes, k.endsWith('.png') ? 'image/png' : 'image/jpeg') : send(404, '');
+  }
   if (u.pathname.startsWith('/api/')) {
     const token = (req.headers.authorization || '').replace('Bearer ', '') || null;
     const ct = req.headers['content-type'] || '';
@@ -46,7 +51,11 @@ const ok = (name, cond, extra = '') => { results.push([cond, name, extra]); };
 async function newPage() {
   const ctx = await browser.newContext({ viewport: { width: 390, height: 800 } });
   const page = await ctx.newPage();
-  await page.route(/^https?:\/\/(?!localhost)/, (r) => r.abort());
+  await page.route(/^https?:\/\/(?!localhost)/, (r) => {
+    const m = r.request().url().match(/\/object\/public\/menu-images\/(.+)$/);
+    const up = m && [...w.uploads].reverse().find((x) => x.key === decodeURIComponent(m[1]));
+    return up ? r.fulfill({ status: 200, contentType: up.key.endsWith('.png') ? 'image/png' : 'image/jpeg', body: up.bytes }) : r.abort();
+  });
   page.on('console', (m) => { if (m.type() === 'error' && !/Failed to load resource|ERR_FAILED|net::/.test(m.text())) problems.push(`console: ${m.text()}`); });
   page.on('pageerror', (e) => problems.push(`pageerror: ${e.message}`));
   return page;
@@ -183,6 +192,72 @@ async function login(page, email) {
   ok('pausado: aviso y sin botones de agregar', await cli2.locator('.m-closed').count() === 1 && await cli2.locator('.m-add').count() === 0);
   await page.click('.sub .tab:has-text("Estadísticas")'); await page.waitForSelector('.stat-grid');
   ok('estadísticas visibles', await page.locator('.stat').count() >= 6);
+}
+
+// ---- Editor de fotos + portada como fondo del encabezado + admin ----
+{
+  const { execFileSync } = await import('node:child_process');
+  const dir = '/tmp/e2e-img'; fs.mkdirSync(dir, { recursive: true });
+  execFileSync('python3', ['-I', '-c', `
+from PIL import Image, ImageDraw
+im = Image.new('RGB', (1600, 900), (200, 60, 40)); d = ImageDraw.Draw(im)
+d.rectangle([800, 0, 1600, 900], fill=(40, 90, 200)); d.ellipse([650, 300, 950, 600], fill=(250, 220, 40))
+im.save('${dir}/ancha.jpg', quality=95)
+Image.new('RGBA', (300, 200), (10, 160, 80, 255)).save('${dir}/chica.png')
+`]);
+  const dims = (buf) => JSON.parse(execFileSync('python3', ['-I', '-c', 'import sys,io,json;from PIL import Image;i=Image.open(io.BytesIO(sys.stdin.buffer.read()));print(json.dumps([i.width,i.height,i.format]))'], { input: buf }).toString());
+  const page = await newPage(); await login(page, 'pro@x.com');
+  // logo: recorte circular, salida cuadrada
+  const n0 = w.uploads.length;
+  await page.setInputFiles('input[aria-label="Elegir logotipo"]', `${dir}/ancha.jpg`);
+  await page.waitForSelector('dialog.crop-dlg[open] canvas');
+  await page.screenshot({ path: '/tmp/e2e-recorte-logo.png' });
+  const c = page.locator('dialog.crop-dlg canvas'); const bb = await c.boundingBox();
+  await page.fill('.crop-zoom', '2'); await page.dispatchEvent('.crop-zoom', 'input');
+  await page.mouse.move(bb.x + bb.width / 2, bb.y + bb.height / 2); await page.mouse.down();
+  await page.mouse.move(bb.x + bb.width / 2 + 80, bb.y + bb.height / 2, { steps: 5 }); await page.mouse.up();
+  await page.click('text=Usar esta foto'); await page.waitForSelector('dialog.crop-dlg', { state: 'detached' });
+  await page.waitForTimeout(500);
+  const up = w.uploads.slice(n0);
+  ok('logo: se subió una imagen recortada', up.length === 1, String(up.length));
+  const [lw, lh, lf] = dims(up[0].bytes);
+  ok('logo: cuadrada 600×600 JPEG', lw === 600 && lh === 600 && lf === 'JPEG', `${lw}x${lh} ${lf}`);
+  // cancelar no sube nada
+  await page.setInputFiles('input[aria-label="Elegir logotipo"]', `${dir}/ancha.jpg`);
+  await page.waitForSelector('dialog.crop-dlg[open]'); await page.click('dialog.crop-dlg >> text=Cancelar');
+  await page.waitForTimeout(300);
+  ok('cancelar el recorte no sube nada', w.uploads.length === n0 + 1);
+  // plato
+  await page.click('.cat >> text=/Agregar|Nuevo/'); await page.fill('#f-name', 'Con foto'); await page.fill('#f-price', '100');
+  await page.setInputFiles('dialog.wide input[type=file]', `${dir}/ancha.jpg`);
+  await page.waitForSelector('dialog.crop-dlg[open]');
+  await page.keyboard.press('ArrowLeft');
+  await page.click('text=Usar esta foto'); await page.waitForSelector('dialog.crop-dlg', { state: 'detached' });
+  ok('plato: vista previa con la foto recortada', await page.locator('dialog.wide .img-prev img').count() === 1);
+  await page.click('dialog.wide button:has-text("Crear producto")'); await page.waitForSelector('text=Con foto'); await page.waitForTimeout(400);
+  const [pw, ph] = dims(w.uploads.at(-1).bytes);
+  ok('plato: 900×900', pw === 900 && ph === 900, `${pw}x${ph}`);
+  // portada 2:1
+  await page.click('.tab:has-text("Diseño")'); await page.waitForSelector('.design-prev .menu');
+  await page.setInputFiles('input[aria-label="Elegir portada"]', `${dir}/ancha.jpg`);
+  await page.waitForSelector('dialog.crop-dlg[open]'); await page.screenshot({ path: '/tmp/e2e-recorte-portada.png' });
+  await page.click('text=Usar esta foto'); await page.waitForSelector('dialog.crop-dlg', { state: 'detached' });
+  await page.waitForSelector('.design-prev .m-hero');
+  const [cw, ch] = dims(w.uploads.at(-1).bytes);
+  ok('portada: 1280×640', cw === 1280 && ch === 640, `${cw}x${ch}`);
+  const geo = await page.evaluate(() => {
+    const q = (s) => document.querySelector(`.design-prev ${s}`).getBoundingClientRect();
+    return { hero: q('.m-hero'), cover: q('.m-cover'), logo: q('.m-logo'), h1: q('.m-hero h1') };
+  });
+  const inside = (a, b) => a.left >= b.left - 1 && a.right <= b.right + 1 && a.top >= b.top - 1 && a.bottom <= b.bottom + 1;
+  ok('portada: ocupa todo el encabezado', inside(geo.cover, geo.hero) && geo.cover.height >= geo.hero.height - 2);
+  ok('portada: logo y nombre quedan DENTRO (encima de la portada)', inside(geo.logo, geo.cover) && inside(geo.h1, geo.cover));
+  await page.locator('.design-prev .m-hero').scrollIntoViewIfNeeded(); await page.screenshot({ path: '/tmp/e2e-portada-hero.png' });
+  // público tras publicar
+  await page.click('.tab:has-text("Menú")'); await page.click('text=Publicar cambios'); await page.waitForSelector('text=Tu menú está al día');
+  const pub = await newPage(); await pub.goto(`${base}/res-pro`); await pub.waitForSelector('.m-hero .m-cover');
+  ok('público: portada detrás del logo', await pub.locator('.m-hero .m-head-in .m-logo').count() === 1);
+  await pub.screenshot({ path: '/tmp/e2e-publico-hero.png' });
 }
 await browser.close(); server.close();
 for (const [c, n, e] of results) console.log(c ? 'OK  ' : 'FALLA', n, c ? '' : e);

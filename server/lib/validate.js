@@ -6,7 +6,7 @@ export const RESERVED_SLUGS = new Set([
   'pedido','pedidos','establecer-contrasena','recuperar','health','favicon','robots',
   'sitemap','soporte','ayuda',
 ]);
-const EMAIL_RE = /^[^\s@]{1,64}@[^\s@]+\.[^\s@]{2,}$/;
+export const EMAIL_RE = /^[^\s@]{1,64}@[^\s@]+\.[^\s@]{2,}$/;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const METHODS = ['efectivo', 'transferencia', 'otro'];
 

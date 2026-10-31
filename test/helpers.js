@@ -14,12 +14,12 @@ export const OWNER_TOKEN = jwt('owner');
 export function makeFake({ failInvite = false } = {}) {
   const state = {
     restaurants: [], owners: [], audit: [], deletedUsers: [],
-    admins: ['u-admin'], rpcCalls: [],
+    admins: ['u-admin'], rpcCalls: [], emailChanges: [], storageDeleted: [], takenEmails: [],
   };
   const users = { admin: { id: 'u-admin', email: 'yo@x.com' }, owner: { id: 'u-owner', email: 'd@x.com' } };
   let n = 0;
   const uuid = () => `00000000-0000-4000-8000-${String(++n).padStart(12, '0')}`;
-  const reply = (data, status = 200) => new Response(data === null ? '' : JSON.stringify(data), { status });
+  const reply = (data, status = 200) => new Response(data === null && [204, 205].includes(status) ? null : (data === null ? '' : JSON.stringify(data)), { status });
 
   async function fetchImpl(url, init = {}) {
     const u = new URL(url);
@@ -38,6 +38,19 @@ export function makeFake({ failInvite = false } = {}) {
     }
     if (p.startsWith('/auth/v1/admin/users/') && method === 'DELETE') {
       state.deletedUsers.push(p.split('/').pop()); return reply(null, 200);
+    }
+    if (p.startsWith('/auth/v1/admin/users/') && method === 'PUT') {
+      if (state.takenEmails.includes(body.email)) return reply({ msg: 'A user with this email address has already been registered' }, 422);
+      state.emailChanges.push({ id: p.split('/').pop(), ...body }); return reply({ id: p.split('/').pop() });
+    }
+    if (p === '/storage/v1/object/menu-images' && method === 'DELETE') { state.storageDeleted.push(...body.prefixes); return reply([]); }
+    if (['products', 'menu_settings', 'menu_versions', 'pending_image_deletes'].some((t) => p === `/rest/v1/${t}`)) {
+      return reply(state.tables?.[p.split('/').pop()] || []);
+    }
+    if (p === '/rest/v1/restaurant_owners' && method !== 'POST') {
+      const rid = (u.searchParams.get('restaurant_id') || '').replace('eq.', '');
+      if (method === 'PATCH') { state.owners.filter((o) => o.restaurant_id === rid).forEach((o) => Object.assign(o, body)); return reply(null, 204); }
+      return reply(state.owners.filter((o) => o.restaurant_id === rid));
     }
     if (p === '/rest/v1/platform_admins') {
       const id = (u.searchParams.get('user_id') || '').replace('eq.', '');
