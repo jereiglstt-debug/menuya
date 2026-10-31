@@ -146,5 +146,3 @@ No verificado: borrado real de usuarios/imágenes y cambio de correo contra Supa
   Honestidad: la migración y su prueba SQL (`supabase/tests/pedidos.sql`, sección 8) **no se pudieron ejecutar acá** (no hay PostgreSQL); corré `pedidos.sql` y comprobá que diga `PEDIDOS OK`. Si el script avisa que no pudo programar la tarea, activá `pg_cron` en Database → Extensions. Los mensajes enviados por WhatsApp quedan en los teléfonos y no se borran desde acá.
 
 Verificado: 104 pruebas automáticas y prueba de navegador (colores aplicados al menú, guardado, bloqueo de combinaciones ilegibles).
-
-
