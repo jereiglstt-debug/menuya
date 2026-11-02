@@ -107,7 +107,8 @@ export function renderMenu(d) {
       p.description && h('p', {}, p.description),
       !p.available && h('span', { class: 'm-tag' }, 'Agotado'),
       cartOn && p.available && h('button', { class: 'm-add', 'aria-label': `Agregar ${p.name} al pedido`, onclick: () => add(key, p) }, 'Agregar')),
-    h('div', { class: 'm-price' }, money(p.price_ars)));
+    // Sin precio cargado (no disponible y en $0): se muestra "Consultar" junto a "Agotado".
+    h('div', { class: 'm-price' }, !p.available && Number(p.price_ars) === 0 ? 'Consultar' : money(p.price_ars)));
 
   const featured = cats.flatMap((c, ci) => c.products.map((p, pi) => ({ p, key: `${ci}:${pi}` }))).filter((x) => x.p.featured);
   const promos = d.promotions || [];
@@ -144,3 +145,4 @@ export function renderMenu(d) {
   applyDesign(root, d.design);
   return root;
 }
+
