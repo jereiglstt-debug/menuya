@@ -44,7 +44,7 @@ export function makeWorld() {
         promotions: t.promotions.filter((x) => x.restaurant_id === r.id && x.active).map(({ title, description }) => ({ title, description })),
         categories: sorted(t.categories.filter((c) => c.restaurant_id === r.id), 'position.asc')
           .filter((c) => prods.some((p) => p.category_id === c.id))
-          .map((c) => ({ id: c.id, name: c.name, products: sorted(prods.filter((p) => p.category_id === c.id), 'position.asc').map(({ id, name, description, price_ars, image_path, available, featured }) => ({ id, name, description, price_ars, image_path, available, featured: !!featured })) })),
+          .map((c) => ({ id: c.id, name: c.name, products: sorted(prods.filter((p) => p.category_id === c.id), 'position.asc').map(({ id, name, description, price_ars, image_path, model_path, available, featured }) => ({ id, name, description, price_ars, image_path, model_path, available, featured: !!featured })) })),
       };
       const version = Math.max(0, ...t.menu_versions.filter((v) => v.restaurant_id === r.id).map((v) => v.version)) + 1;
       t.menu_versions.push({ restaurant_id: r.id, version, snapshot, published_at: now() });
@@ -116,3 +116,15 @@ export function makeWorld() {
   }
   return { t, storage, uploads, addUser, addRestaurant, call };
 }
+
+// GLB mínimo y válido (cabecera + bloque JSON). `json` permite armar casos inválidos.
+export function makeGlb(json = { asset: { version: '2.0' }, meshes: [{ primitives: [] }] }, { extra = 0, lie } = {}) {
+  let text = JSON.stringify(json); while (text.length % 4) text += ' ';
+  const body = new TextEncoder().encode(text);
+  const total = 20 + body.length + extra;
+  const out = new Uint8Array(total); const v = new DataView(out.buffer);
+  v.setUint32(0, 0x46546c67, true); v.setUint32(4, 2, true); v.setUint32(8, lie ?? total, true);
+  v.setUint32(12, body.length, true); v.setUint32(16, 0x4e4f534a, true); out.set(body, 20);
+  return out;
+}
+export const GLB = makeGlb();

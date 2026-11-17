@@ -7,7 +7,7 @@ import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 let chromium; try { ({ chromium } = require('playwright')); } catch { ({ chromium } = (await import('playwright'))); }
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '../..');
-const { makeWorld } = await import(`${ROOT}/test/world.js`);
+const { makeWorld, makeGlb } = await import(`${ROOT}/test/world.js`);
 const w = makeWorld();
 const tokens = { 'pro@x.com': w.addUser('pro'), 'bas@x.com': w.addUser('bas'), 'prem@x.com': w.addUser('prem') };
 w.addRestaurant('res-pro', 'pro', { plan: 'profesional' });
@@ -27,7 +27,7 @@ const server = http.createServer(async (req, res) => {
   if (u.pathname.startsWith('/storage/v1/object/public/menu-images/')) {
     const k = decodeURIComponent(u.pathname.replace('/storage/v1/object/public/menu-images/', ''));
     const up = [...w.uploads].reverse().find((x) => x.key === k);
-    return up ? send(200, up.bytes, k.endsWith('.png') ? 'image/png' : 'image/jpeg') : send(404, '');
+    return up ? send(200, up.bytes, k.endsWith('.glb') ? 'model/gltf-binary' : k.endsWith('.png') ? 'image/png' : 'image/jpeg') : send(404, '');
   }
   if (u.pathname.startsWith('/api/')) {
     const token = (req.headers.authorization || '').replace('Bearer ', '') || null;
@@ -54,7 +54,7 @@ async function newPage() {
   await page.route(/^https?:\/\/(?!localhost)/, (r) => {
     const m = r.request().url().match(/\/object\/public\/menu-images\/(.+)$/);
     const up = m && [...w.uploads].reverse().find((x) => x.key === decodeURIComponent(m[1]));
-    return up ? r.fulfill({ status: 200, contentType: up.key.endsWith('.png') ? 'image/png' : 'image/jpeg', body: up.bytes }) : r.abort();
+    return up ? r.fulfill({ status: 200, contentType: up.key.endsWith('.glb') ? 'model/gltf-binary' : up.key.endsWith('.png') ? 'image/png' : 'image/jpeg', body: up.bytes }) : r.abort();
   });
   page.on('console', (m) => { if (m.type() === 'error' && !/Failed to load resource|ERR_FAILED|net::/.test(m.text())) problems.push(`console: ${m.text()}`); });
   page.on('pageerror', (e) => problems.push(`pageerror: ${e.message}`));
@@ -113,7 +113,7 @@ async function login(page, email) {
   const page = await newPage(); await login(page, 'bas@x.com');
   await page.click('text=Nueva categoría'); await page.fill('#dlg-in', 'Café'); await page.click('dialog button:has-text("Crear")'); await page.waitForSelector('.cat');
   await page.click('.cat >> text=/Agregar|Nuevo/');
-  ok('básico: destacado bloqueado', await page.locator('#f-ft').count() === 0 && await page.locator('dialog .lock-note').count() === 1);
+  ok('básico: destacado bloqueado', await page.locator('#f-ft').count() === 0 && await page.locator('dialog .lock-note:has-text("Destacados")').count() === 1);
   await page.fill('#f-name', 'Cortado'); await page.fill('#f-price', '2000'); await page.click('dialog button:has-text("Crear producto")'); await page.waitForSelector('text=Cortado');
   await page.fill('#b-wa', '5491122334455'); await page.click('text=Guardar datos'); await page.waitForTimeout(300);
   await page.click('.tab[data-k=pagos]'); await page.waitForSelector('#pm-efectivo');
@@ -254,6 +254,17 @@ Image.new('RGBA', (300, 200), (10, 160, 80, 255)).save('${dir}/chica.png')
   ok('portada: logo y nombre quedan DENTRO (encima de la portada)', inside(geo.logo, geo.cover) && inside(geo.h1, geo.cover));
   await page.locator('.design-prev .m-hero').scrollIntoViewIfNeeded(); await page.screenshot({ path: '/tmp/e2e-portada-hero.png' });
 
+  // producto sin precio: no disponible y en $0 → "Agotado" + "Consultar"
+  await page.click('.tab:has-text("Menú")');
+  await page.click('.cat >> text=/Agregar|Nuevo/'); await page.fill('#f-name', 'Sin precio'); await page.fill('#f-price', '0'); await page.uncheck('#f-av');
+  await page.click('dialog button:has-text("Crear producto")'); await page.waitForSelector('text=Sin precio'); await page.waitForTimeout(300);
+  await page.click('text=Vista previa'); await page.waitForSelector('dialog .preview-frame .menu');
+  const sp = await page.evaluate(() => { const li = [...document.querySelectorAll('dialog .preview-frame .m-item')].find((x) => x.textContent.includes('Sin precio')); return li && { tag: li.querySelector('.m-tag')?.textContent, price: li.querySelector('.m-price')?.textContent, add: li.querySelectorAll('.m-add').length }; });
+  ok('sin precio: "Agotado" y "Consultar" juntos, sin botón de agregar', sp && sp.tag === 'Agotado' && sp.price === 'Consultar' && sp.add === 0, JSON.stringify(sp));
+  const okp = await page.evaluate(() => [...document.querySelectorAll('dialog .preview-frame .m-item')].filter((x) => !x.textContent.includes('Sin precio')).every((x) => /\$/.test(x.querySelector('.m-price').textContent)));
+  ok('los productos con precio siguen mostrando su precio', okp);
+  await page.screenshot({ path: '/tmp/e2e-consultar.png' });
+  await page.keyboard.press('Escape');
   // colores extra del diseño
   await page.click('.tab:has-text("Menú")'); await page.fill('#b-desc', 'Pizzas y más'); await page.click('text=Guardar datos'); await page.waitForTimeout(400);
   await page.click('.tab:has-text("Diseño")'); await page.waitForSelector('.design-prev .menu');
@@ -284,6 +295,52 @@ Image.new('RGBA', (300, 200), (10, 160, 80, 255)).save('${dir}/chica.png')
   const pub = await newPage(); await pub.goto(`${base}/res-pro`); await pub.waitForSelector('.m-hero .m-cover');
   ok('público: portada detrás del logo', await pub.locator('.m-hero .m-head-in .m-logo').count() === 1);
   await pub.screenshot({ path: '/tmp/e2e-publico-hero.png' });
+}
+
+// ---- Modelos 3D (Premium) ----
+{
+  const page = await newPage();
+  // Visor de PRUEBA: el real (model-viewer de Google) no se puede bajar en este entorno.
+  const STUB = "class MV extends HTMLElement{connectedCallback(){setTimeout(()=>this.dispatchEvent(new Event('load')),30)}} customElements.define('model-viewer',MV);";
+  await page.route('**/vendor/model-viewer.min.js', (r) => r.fulfill({ status: 200, contentType: 'text/javascript', body: STUB }));
+  await login(page, 'prem@x.com');
+  await page.click('text=Nueva categoría'); await page.fill('#dlg-in', 'Pizzas'); await page.click('dialog button:has-text("Crear")'); await page.waitForSelector('.cat');
+  await page.click('.cat >> text=/Agregar|Nuevo/'); await page.fill('#f-name', 'Pizza AR'); await page.fill('#f-price', '9000');
+  ok('panel Premium: campo de modelo 3D visible', await page.locator('dialog.wide .model-box').count() === 1);
+  // archivo que no es .glb → rechazado en el panel
+  await page.setInputFiles('input[aria-label="Elegir modelo 3D"]', { name: 'foto.jpg', mimeType: 'image/jpeg', buffer: Buffer.from([1, 2, 3]) });
+  ok('panel: rechaza un archivo que no es .glb', (await page.textContent('dialog.wide .model-box')).includes('Sin modelo 3D'));
+  await page.setInputFiles('input[aria-label="Elegir modelo 3D"]', { name: 'pizza.glb', mimeType: 'model/gltf-binary', buffer: Buffer.from(makeGlb()) });
+  ok('panel: muestra el archivo listo para subir', (await page.textContent('dialog.wide .model-box')).includes('pizza.glb'));
+  await page.click('dialog.wide button:has-text("Crear producto")'); await page.waitForSelector('text=Pizza AR'); await page.waitForTimeout(400);
+  ok('panel: el modelo se subió al servidor', w.t.products.some((x) => x.name === 'Pizza AR' && /\.glb$/.test(x.model_path || '')));
+  ok('panel: etiqueta "AR 3D" en la lista', await page.locator('.prow .tag-ar').count() === 1);
+  await page.click('text=Publicar cambios'); await page.waitForSelector('text=Tu menú está al día');
+  // público
+  const pub = await newPage();
+  await pub.route('**/vendor/model-viewer.min.js', (r) => r.fulfill({ status: 200, contentType: 'text/javascript', body: STUB }));
+  await pub.goto(`${base}/res-prem`); await pub.waitForSelector('.m-item');
+  ok('público: botón "Ver" en el platillo con modelo', await pub.locator('.m-item .m-ver').count() === 1);
+  ok('público: el visor NO se descarga hasta tocar "Ver"', !(await pub.evaluate(() => !!customElements.get('model-viewer'))));
+  await pub.click('.m-ver'); await pub.waitForSelector('dialog.m-ar[open] model-viewer');
+  const mv = await pub.evaluate(() => { const e = document.querySelector('dialog.m-ar model-viewer'); return { src: e.getAttribute('src'), ar: e.hasAttribute('ar'), modes: e.getAttribute('ar-modes'), scale: e.getAttribute('ar-scale'), btn: e.querySelector('[slot=ar-button]')?.textContent }; });
+  ok('público: el visor recibe el modelo, AR y tamaño fijo (real)', /\.glb$/.test(mv.src) && mv.ar && mv.modes === 'scene-viewer quick-look' && mv.scale === 'fixed' && mv.btn === 'Ver en mi mesa', JSON.stringify(mv));
+  await pub.waitForFunction(() => !document.querySelector('.m-ar-status'));
+  ok('público: se oculta "Cargando" cuando el modelo carga', true);
+  await pub.screenshot({ path: '/tmp/e2e-ar-visor.png' });
+  await pub.click('dialog.m-ar button:has-text("Cerrar")');
+  ok('público: se puede cerrar el visor', await pub.locator('dialog.m-ar[open]').count() === 0);
+  // sin el archivo del visor en el sitio → mensaje claro, sin romper el menú
+  const pub2 = await newPage(); await pub2.goto(`${base}/res-prem`); await pub2.waitForSelector('.m-item');
+  await pub2.click('.m-ver'); await pub2.waitForSelector('.m-ar-status');
+  await pub2.waitForFunction(() => document.querySelector('.m-ar-status')?.textContent.includes('No se pudo cargar el visor'));
+  ok('sin visor instalado: mensaje claro y el menú sigue andando', await pub2.locator('.m-item').count() >= 1 && await pub2.locator('dialog.m-ar[open]').count() === 1, String(await pub2.locator('.m-item').count()));
+  // El error de consola de arriba es ESPERADO (el visor no está instalado a propósito en esa prueba).
+  for (let i = problems.length - 1; i >= 0; i--) if (/Failed to load module script/.test(problems[i])) problems.splice(i, 1);
+  // Profesional: sin campo de modelo
+  const pro = await newPage(); await login(pro, 'pro@x.com');
+  await pro.click('.cat >> text=/Agregar|Nuevo/');
+  ok('panel Profesional: sin campo de modelo y con aviso de plan', await pro.locator('dialog.wide .model-box').count() === 0 && (await pro.textContent('dialog.wide')).includes('plan Premium'));
 }
 await browser.close(); server.close();
 for (const [c, n, e] of results) console.log(c ? 'OK  ' : 'FALLA', n, c ? '' : e);
