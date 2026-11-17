@@ -5,6 +5,7 @@ import { h, money } from '/shared/core.js';
 import { resolveDesign, FONTS, fontHref, textOn } from '/shared/design.js';
 import { PAY_LABEL } from '/shared/pagos.js';
 import { openOrderForm, openTracking, savedOrder } from '/menu/pedido.js';
+import { openViewer } from '/menu/ar.js';
 import { waLink, inquiryMessage, orderMessage, orderTotal, MAX_QTY, MAX_LINES, MAX_URL } from '/shared/whatsapp.js';
 
 // Carga la tipografía elegida (una sola vez por fuente).
@@ -38,6 +39,7 @@ export function renderMenu(d) {
   const cart = new Map(); // clave de producto -> { name, price_ars, qty }
   const bar = h('div', { class: 'm-bar hidden' });
   const dlg = h('dialog', { class: 'm-cart', 'aria-label': 'Tu pedido' });
+  const arDlg = h('dialog', { class: 'm-cart m-ar', 'aria-label': 'Ver el platillo en 3D' });
 
   const items = () => [...cart.values()];
   const count = () => items().reduce((s, i) => s + i.qty, 0);
@@ -106,6 +108,7 @@ export function renderMenu(d) {
       h('h3', {}, p.name),
       p.description && h('p', {}, p.description),
       !p.available && h('span', { class: 'm-tag' }, 'Agotado'),
+      p.model_url && h('button', { class: 'm-ver', type: 'button', 'aria-label': `Ver ${p.name} en realidad aumentada`, onclick: () => openViewer(arDlg, p) }, 'Ver'),
       cartOn && p.available && h('button', { class: 'm-add', 'aria-label': `Agregar ${p.name} al pedido`, onclick: () => add(key, p) }, 'Agregar')),
     // Sin precio cargado (no disponible y en $0): se muestra "Consultar" junto a "Agotado".
     h('div', { class: 'm-price' }, !p.available && Number(p.price_ars) === 0 ? 'Consultar' : money(p.price_ars)));
@@ -137,6 +140,7 @@ export function renderMenu(d) {
       h('strong', {}, 'Medios de pago: '),
       d.payments.methods.map((m) => PAY_LABEL[m]).join(' · '),
       d.payments.methods.includes('combinado') && d.payments.combo_options.length >= 2 && h('span', { class: 'm-pay-combo' }, ` (en “Combinado” podés usar: ${d.payments.combo_options.map((m) => PAY_LABEL[m]).join(' + ')})`)),
+    arDlg,
     barOn && bar, barOn && dlg,
     ord && ord.state !== 'abierto' && h('div', { class: 'm-closed', role: 'status' }, ord.state === 'pausado' ? 'Los pedidos están pausados por un momento. Podés ver el menú igual.' : 'Ahora no estamos recibiendo pedidos. Podés ver el menú igual.'),
     !cartOn && !ord && d.whatsapp && h('div', { class: 'm-bar' },
@@ -145,4 +149,3 @@ export function renderMenu(d) {
   applyDesign(root, d.design);
   return root;
 }
-

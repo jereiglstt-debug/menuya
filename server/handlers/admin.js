@@ -1,5 +1,7 @@
 import { HttpError, readJson, json } from '../lib/http.js';
 import { requireAdmin } from '../lib/auth.js';
+import { attachModel, detachModel, modelStatus } from '../lib/modelOps.js';
+import { hasFeature } from '../lib/plans.js';
 import { isUuid, EMAIL_RE, validateRestaurantInput, validatePaymentInput } from '../lib/validate.js';
 
 const RESTAURANT_SELECT =
@@ -112,11 +114,54 @@ export async function updateRestaurant({ request, db, params }) {
   if ('status' in changes && changes.status !== before.status) {
     await audit(db, admin, changes.status === 'suspendido' ? 'cuenta_suspendida' : 'cuenta_reactivada', before.id);
   }
+  if ('model_limit' in changes) {
+    await audit(db, admin, 'limite_modelos_cambiado', before.id, { a: changes.model_limit });
+  }
   if ('name' in changes || 'description' in changes) {
     await audit(db, admin, 'datos_editados', before.id, { campos: Object.keys(changes).filter((k) => k === 'name' || k === 'description') });
   }
   const fresh = await getRestaurant(db, updated.id);
   return json({ restaurant: shape(fresh) });
+}
+
+// ---- Modelos 3D: el administrador puede cargar los de cualquier restaurante ----
+async function adminProduct(db, rid, pid) {
+  if (!isUuid(pid)) throw new HttpError(400, 'Identificador inválido.');
+  const [p] = await db.rest('products', { query: { select: 'id,name,category_id,model_path,image_path', id: `eq.${pid}`, restaurant_id: `eq.${rid}` } });
+  if (!p) throw new HttpError(404, 'Producto no encontrado.');
+  return p;
+}
+
+export async function listProducts({ request, db, params }) {
+  await requireAdmin(request, db);
+  const r = await getRestaurant(db, params.id);
+  const [cats, prods] = await Promise.all([
+    db.rest('categories', { query: { select: 'id,name', restaurant_id: `eq.${r.id}`, order: 'position.asc,created_at.asc' } }),
+    db.rest('products', { query: { select: 'id,name,category_id,model_path', restaurant_id: `eq.${r.id}`, order: 'position.asc,created_at.asc' } }),
+  ]);
+  const enabled = hasFeature(r.plan, 'modelos_3d');
+  return json({
+    enabled, models: await modelStatus(db, r.id),
+    products: prods.map((p) => ({ id: p.id, name: p.name, category: cats.find((c) => c.id === p.category_id)?.name ?? '', has_model: !!p.model_path, model_url: db.publicUrl(p.model_path) })),
+  });
+}
+
+export async function uploadModel({ request, db, params }) {
+  const admin = await requireAdmin(request, db);
+  const r = await getRestaurant(db, params.id);
+  const p = await adminProduct(db, r.id, params.id2);
+  await attachModel({ db, restaurant: r, product: p, request });
+  await audit(db, admin, 'modelo_3d_subido', r.id, { producto: p.name });
+  return json({ ok: true });
+}
+
+export async function deleteModel({ request, db, params }) {
+  const admin = await requireAdmin(request, db);
+  const r = await getRestaurant(db, params.id);
+  const p = await adminProduct(db, r.id, params.id2);
+  await detachModel({ db, restaurant: r, product: p });
+  await audit(db, admin, 'modelo_3d_quitado', r.id, { producto: p.name });
+  return json({ ok: true });
 }
 
 export async function registerPayment({ request, db, params }) {

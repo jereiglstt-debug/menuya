@@ -102,3 +102,12 @@
 .m-combo legend{font-weight:600;padding:0 6px}
 .m-cart .m-check{display:flex;align-items:center;gap:8px;margin:6px 0;font-weight:400}
 .m-cart .m-check input{width:20px;height:20px}
+
+.m-ver{margin-top:8px;margin-right:8px;min-height:40px;padding:6px 18px;border:2px solid var(--m-ink);border-radius:999px;background:transparent;color:var(--m-ink);font:inherit;font-weight:700;cursor:pointer}
+.m-ver:focus-visible,.m-ar-btn:focus-visible{outline:3px solid var(--m-ink);outline-offset:2px}
+.m-ar{width:min(560px,96vw)}
+.m-ar-stage{position:relative;min-height:260px;border-radius:12px;background:var(--m-surface,rgba(0,0,0,.05));overflow:hidden}
+.m-ar-viewer{display:block;width:100%;height:min(60vh,420px);--poster-color:transparent}
+.m-ar-status{margin:0;padding:24px 12px;text-align:center}
+.m-ar-hint{margin:10px 0 0;font-size:.9rem;opacity:.85}
+.m-ar-btn{position:absolute;left:50%;bottom:12px;transform:translateX(-50%);white-space:nowrap}

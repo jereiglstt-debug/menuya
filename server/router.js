@@ -20,6 +20,9 @@ const ROUTES = [
   ['PATCH', /^\/admin\/restaurants\/([^/]+)\/owner-email$/, admin.changeOwnerEmail],
   ['POST',  /^\/admin\/restaurants\/([^/]+)\/payments$/,    admin.registerPayment],
   ['POST',  /^\/admin\/restaurants\/([^/]+)\/access-link$/, admin.accessLink],
+  ['GET',   /^\/admin\/restaurants\/([^/]+)\/products$/,  admin.listProducts],
+  ['POST',  /^\/admin\/restaurants\/([^/]+)\/products\/([^/]+)\/model$/, admin.uploadModel],
+  ['DELETE', /^\/admin\/restaurants\/([^/]+)\/products\/([^/]+)\/model$/, admin.deleteModel],
   ['GET',   /^\/admin\/audit$/,                    admin.listAudit],
 
   ['GET',    /^\/public\/menu\/([^/]+)$/,            publicMenu],
@@ -60,6 +63,8 @@ const ROUTES = [
   ['POST',   /^\/owner\/products\/([^/]+)\/duplicate$/, owner.duplicateProduct],
   ['POST',   /^\/owner\/products\/([^/]+)\/image$/, owner.uploadProductImage],
   ['DELETE', /^\/owner\/products\/([^/]+)\/image$/, owner.deleteProductImage],
+  ['POST',   /^\/owner\/products\/([^/]+)\/model$/, owner.uploadProductModel],
+  ['DELETE', /^\/owner\/products\/([^/]+)\/model$/, owner.deleteProductModel],
 ];
 
 export async function handle(request, env, fetchImpl = fetch) {

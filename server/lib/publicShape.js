@@ -10,6 +10,7 @@ export function publicShape(src, plan, db, opts = {}) {
   const ordering = opts.ordering || null; // solo Premium con pedidos; trae ids de producto
   const perms = designPermissions(plan);
   const featured = hasFeature(plan, 'destacados');
+  const models = hasFeature(plan, 'modelos_3d');
   return {
     title: src.title, description: src.description,
     logo_url: db.publicUrl(src.logo_path),
@@ -27,6 +28,7 @@ export function publicShape(src, plan, db, opts = {}) {
         ...(ordering ? { id: p.id } : {}),
         name: p.name, description: p.description, price_ars: p.price_ars, available: p.available,
         featured: featured && !!p.featured, image_url: db.publicUrl(p.image_path),
+        model_url: models ? db.publicUrl(p.model_path) : null,
       })),
     })),
   };

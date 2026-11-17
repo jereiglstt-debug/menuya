@@ -92,3 +92,6 @@ dialog.crop-dlg{width:min(400px,96vw);max-height:94vh;overflow:auto}
 .crop-canvas{max-width:100%;border-radius:10px;border:1px solid var(--line);touch-action:none;cursor:grab;background:#fff}
 .crop-canvas.grab{cursor:grabbing}
 .crop-zoom{width:100%}
+
+.tag-ar { display: inline-block; margin-left: .4rem; padding: .05rem .4rem; border-radius: 999px; background: #e0f2fe; color: #075985; font-size: .72rem; font-weight: 700; }
+.model-box { margin: .8rem 0; padding: .7rem; border: 1px dashed var(--line, #cbd5e1); border-radius: 10px; }

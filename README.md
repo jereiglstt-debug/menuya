@@ -147,4 +147,32 @@ No verificado: borrado real de usuarios/imágenes y cambio de correo contra Supa
 
 Verificado: 104 pruebas automáticas y prueba de navegador (colores aplicados al menú, guardado, bloqueo de combinaciones ilegibles).
 
+## Etapa 4f — "Consultar" en productos sin precio
 
+Un producto **no disponible y en $0** se muestra en el menú como "Agotado" + "Consultar" (antes "$ 0"). Un producto disponible en $0 sigue mostrando "$ 0". Solo cambia `public/menu/render.js`; no hay migración. Verificado en el navegador (`test/e2e/navegador.mjs`).
+
+## Etapa 4g — Modelos 3D y realidad aumentada (plan Premium)
+
+Cada platillo puede tener un modelo 3D (archivo **.glb**). En la carta aparece un botón **“Ver”**: abre un visor donde se gira el plato y un botón **“Ver en mi mesa”** que abre la cámara con el plato en tamaño real (Android: Scene Viewer; iPhone: AR Quick Look).
+
+### Cómo activarlo (en este orden)
+1. **Supabase → SQL Editor:** ejecutar `supabase/migrations/0008_modelos_3d.sql` **ANTES de subir el código nuevo** (si no, el panel falla al leer la columna nueva).
+2. **Instalar el visor** (un solo archivo, una vez): descargar `https://cdn.jsdelivr.net/npm/@google/model-viewer@3.5.0/dist/model-viewer.min.js`, guardarlo como `model-viewer.min.js` y subirlo a GitHub en la carpeta `public/vendor/`. Hace falta alojarlo en el propio sitio porque la política de seguridad solo permite scripts propios. Sin ese archivo el botón “Ver” muestra “No se pudo cargar el visor 3D”.
+3. Subir el código a GitHub y esperar el despliegue de Cloudflare.
+
+### Reglas (las aplica el servidor)
+- Solo Premium puede subir modelos; en otros planes no se muestran aunque existan.
+- Máximo **8 MB** por archivo y **15 modelos** por restaurante (el administrador lo cambia en “Administrar modelos 3D”, 0 a 200).
+- Se valida el contenido del archivo (GLB versión 2 con figura 3D). Se rechazan modelos comprimidos (Draco/Meshopt/KTX2) o que referencien archivos externos.
+- El modelo es parte del borrador: llega a los clientes al **publicar**. El reemplazado se borra tras publicar.
+- Duplicar un platillo **no** copia el modelo. Eliminar el restaurante borra sus modelos.
+- El almacenamiento comparte el bucket `menu-images`: los modelos cuentan contra el 1 GB del plan gratuito de Supabase.
+
+### Quién carga los modelos
+- El dueño, desde “Editar producto → Modelo 3D”.
+- El administrador, desde el detalle del restaurante → “Administrar modelos 3D”.
+- Para crearlos: apps de escaneo con el celular (Polycam, Kiri Engine, Luma) exportando **GLB sin comprimir**. Para que se vea en tamaño real el modelo tiene que salir a escala real.
+
+### Qué se probó y qué NO
+- Probado (tests automáticos y de navegador): permisos por plan, aislamiento entre restaurantes, límites, validación del GLB, limpieza de archivos al publicar/borrar, botón “Ver”, que el visor se cargue solo al tocarlo y que se pase el modelo con AR y tamaño fijo, y el mensaje cuando falta el visor.
+- **NO probado:** el visor real de Google (en la prueba se usó uno de reemplazo), la cámara AR en Android e iPhone, el tamaño real de los modelos, la migración 0008 contra Postgres real, y el comportamiento de la política de seguridad con el visor real. **Probarlo en un Android y un iPhone antes de ofrecerlo a clientes.**

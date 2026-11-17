@@ -14,6 +14,7 @@ const $app = document.getElementById('app');
 const PLAN = { basico: 'Básico', profesional: 'Profesional', premium: 'Premium' };
 const MAX_IMG = 2 * 1024 * 1024;
 const IMG_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+const MAX_MODEL = 8 * 1024 * 1024;
 
 const cfg = await fetch('/api/config').then((r) => r.json()).catch(() => ({}));
 if (!cfg.supabaseUrl) {
@@ -232,7 +233,7 @@ function productRow(p, c) {
   return h('li', { class: `prow${p.available ? '' : ' off'}`, 'data-id': p.id, draggable: 'true' },
     h('span', { class: 'handle', title: 'Arrastrar para ordenar', 'aria-hidden': 'true' }, '⋮⋮'),
     p.image_url ? h('img', { class: 'thumb', src: p.image_url, alt: '' }) : h('span', { class: 'thumb' }, 'Sin foto'),
-    h('div', {}, h('div', { class: 'pname' }, p.name, p.featured && h('span', { class: 'tag-star' }, '★ Destacado'), !p.available && h('span', { class: 'tag-off' }, 'Agotado')), h('div', { class: 'pmeta' }, money(p.price_ars))),
+    h('div', {}, h('div', { class: 'pname' }, p.name, p.featured && h('span', { class: 'tag-star' }, '★ Destacado'), p.model_url && h('span', { class: 'tag-ar' }, 'AR 3D'), !p.available && h('span', { class: 'tag-off' }, 'Agotado')), h('div', { class: 'pmeta' }, money(p.price_ars))),
     h('div', { class: 'pacts' },
       h('button', { class: 'btn small', 'aria-label': `Subir ${p.name}`, disabled: i === 0, onclick: () => reorder(-1) }, '↑'),
       h('button', { class: 'btn small', 'aria-label': `Bajar ${p.name}`, disabled: i === ids.length - 1, onclick: () => reorder(1) }, '↓'),
@@ -254,7 +255,23 @@ function productDialog(p, categoryId) {
     file: h('input', { type: 'file', accept: IMG_TYPES.join(','), class: 'hidden', 'aria-label': 'Elegir foto' }),
   };
   const canFeature = S.capabilities.features.includes('destacados');
+  const canModel = S.capabilities.features.includes('modelos_3d');
   let newFile = null; let removeImage = false;
+  let newModel = null; let removeModel = false;
+  const modelState = h('p', { class: 'hint' });
+  const showModel = () => {
+    const has = (p?.model_url && !removeModel) || newModel;
+    modelState.textContent = (newModel ? `Listo para subir: ${newModel.name}` : has ? 'Este platillo ya tiene modelo 3D.' : 'Sin modelo 3D.')
+      + (S.models ? ` Usaste ${S.models.used} de ${S.models.limit} modelos.` : '');
+  };
+  const modelFile = h('input', { type: 'file', accept: '.glb,model/gltf-binary', class: 'hidden', 'aria-label': 'Elegir modelo 3D' });
+  modelFile.addEventListener('change', () => {
+    const file = modelFile.files[0]; modelFile.value = ''; if (!file) return;
+    if (!/\.glb$/i.test(file.name)) return toast('El archivo tiene que ser .glb.');
+    if (file.size > MAX_MODEL) return toast('El modelo supera los 8 MB. Probá con uno más liviano.');
+    newModel = file; removeModel = false; showModel();
+  });
+  showModel();
   const prev = h('div', { class: 'img-prev' }, p?.image_url ? h('img', { src: p.image_url, alt: '' }) : 'Sin foto');
   const err = h('div', { class: 'form-error hidden', role: 'alert' });
   const fe = {}; const L = (k, id, text, el, hint) => { fe[k] = h('p', { class: 'field-error hidden' }); return h('div', {}, h('label', { for: id }, text), el, hint && h('p', { class: 'hint' }, hint), fe[k]); };
@@ -279,6 +296,8 @@ function productDialog(p, categoryId) {
         const saved = p ? (await api(`/owner/products/${p.id}`, { method: 'PATCH', body })).product : (await api('/owner/products', { method: 'POST', body })).product;
         if (newFile) await api(`/owner/products/${saved.id}/image`, { method: 'POST', raw: newFile, type: newFile.type });
         else if (removeImage && p?.image_url) await api(`/owner/products/${saved.id}/image`, { method: 'DELETE' });
+        if (canModel && newModel) await api(`/owner/products/${saved.id}/model`, { method: 'POST', raw: newModel, type: 'model/gltf-binary' });
+        else if (removeModel && p?.model_url) await api(`/owner/products/${saved.id}/model`, { method: 'DELETE' });
         d.close(); await reload(); toast(p ? 'Producto actualizado' : 'Producto creado');
       } catch (e) {
         if (e.message === 'sesión') return;
@@ -296,6 +315,14 @@ function productDialog(p, categoryId) {
         h('button', { class: 'btn small', type: 'button', onclick: () => f.file.click() }, 'Elegir foto'), f.file,
         (p?.image_url) && h('button', { class: 'btn small danger ml', type: 'button', onclick: () => { removeImage = true; newFile = null; prev.replaceChildren('Sin foto'); } }, 'Quitar foto'),
         h('p', { class: 'hint' }, 'JPG, PNG o WebP. Hasta 2 MB.'))),
+      canModel ? h('div', { class: 'model-box' },
+        h('label', {}, 'Modelo 3D para realidad aumentada (opcional)'),
+        h('div', {},
+          h('button', { class: 'btn small', type: 'button', onclick: () => modelFile.click() }, 'Elegir archivo .glb'), modelFile,
+          (p?.model_url || newModel) && h('button', { class: 'btn small danger ml', type: 'button', onclick: () => { newModel = null; removeModel = true; showModel(); } }, 'Quitar modelo'),
+          modelState,
+          h('p', { class: 'hint' }, 'Un solo archivo GLB de hasta 8 MB, sin compresión. Tus clientes verán un botón “Ver” para ponerlo en su mesa con la cámara.')))
+        : h('p', { class: 'lock-note' }, 'Modelo 3D en realidad aumentada: disponible en el plan Premium.'),
       h('label', { class: 'check', for: 'f-av' }, f.avail, 'Disponible (si lo desmarcás se muestra como “Agotado”)'),
       canFeature ? h('label', { class: 'check', for: 'f-ft' }, f.feat, 'Producto destacado (aparece arriba, en “Destacados”)') : h('p', { class: 'lock-note' }, 'Destacados: disponible desde el plan Profesional.'), err,
       h('div', { class: 'actions' }, btn, h('button', { class: 'btn', type: 'button', onclick: () => d.close() }, 'Cancelar'))));

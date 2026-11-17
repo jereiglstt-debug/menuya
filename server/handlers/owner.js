@@ -3,7 +3,7 @@
 // "no existe" para quien lo pide (404), nunca se lee ni se modifica.
 import { HttpError, readJson, json } from '../lib/http.js';
 import { requireOwner } from '../lib/auth.js';
-import { requireFeature, designPermissions, featuresFor } from '../lib/plans.js';
+import { requireFeature, designPermissions, featuresFor, hasFeature } from '../lib/plans.js';
 import { validateDesign, sanitizeDesign } from '../../public/shared/design.js';
 import { publicShape } from '../lib/publicShape.js';
 import { orderingView } from '../lib/orders.js';
@@ -11,12 +11,13 @@ import { paymentsView } from '../lib/payments.js';
 
 const MAX_PROMOS = 10;
 import { readImage, newImagePath } from '../lib/images.js';
+import { attachModel, detachModel, modelStatus } from '../lib/modelOps.js';
 import {
   isUuid, validateCategoryInput, validateProductInput, validateSettingsInput, validateIdList, validatePromotionInput,
 } from '../lib/validate.js';
 
 const PROMO_SELECT = 'id,title,description,active';
-const PROD_SELECT = 'id,category_id,name,description,price_ars,image_path,available,featured,position';
+const PROD_SELECT = 'id,category_id,name,description,price_ars,image_path,model_path,available,featured,position';
 
 async function ctx(request, db) {
   const c = await requireOwner(request, db);
@@ -43,7 +44,7 @@ async function ensureSettings(db, r) {
   return row;
 }
 const hasCover = (r) => designPermissions(r.plan).advanced;
-const withUrl = (db, p) => ({ ...p, image_url: db.publicUrl(p.image_path) });
+const withUrl = (db, p) => ({ ...p, image_url: db.publicUrl(p.image_path), model_url: db.publicUrl(p.model_path) });
 
 // ---------------- lectura ----------------
 export async function getMenu({ request, db }) {
@@ -66,6 +67,7 @@ export async function getMenu({ request, db }) {
     design: sanitizeDesign(settings.design, designPermissions(r.plan)),
     cover_url: hasCover(r) ? db.publicUrl(settings.cover_path) : null,
     capabilities: { design: designPermissions(r.plan), features: featuresFor(r.plan) },
+    models: hasFeature(r.plan, 'modelos_3d') ? await modelStatus(db, r.id) : null,
     categories: cats.map((c) => ({ ...c, products: prods.filter((p) => p.category_id === c.id).map((p) => withUrl(db, p)) })),
     status: { version: last?.version ?? null, last_published_at: last?.published_at ?? null, unpublished_changes: unpublished },
   });
@@ -92,10 +94,10 @@ export async function updateCategory({ request, db, params }) {
 
 export async function deleteCategory({ request, db, params }) {
   const { restaurant: r } = await ctx(request, db); needId(params.id);
-  const prods = await db.rest('products', { query: { select: 'image_path', category_id: `eq.${params.id}`, restaurant_id: `eq.${r.id}` } });
+  const prods = await db.rest('products', { query: { select: 'image_path,model_path', category_id: `eq.${params.id}`, restaurant_id: `eq.${r.id}` } });
   const rows = await db.rest('categories', { method: 'DELETE', query: own(r.id, params.id), returning: true });
   if (!rows.length) throw notFound('Categoría');
-  for (const p of prods) await queueImage(db, r.id, p.image_path);
+  for (const p of prods) { await queueImage(db, r.id, p.image_path); await queueImage(db, r.id, p.model_path); }
   return json({ ok: true });
 }
 
@@ -151,6 +153,7 @@ export async function deleteProduct({ request, db, params }) {
   const p = await getProduct(db, r.id, params.id);
   await db.rest('products', { method: 'DELETE', query: own(r.id, params.id) });
   await queueImage(db, r.id, p.image_path);
+  await queueImage(db, r.id, p.model_path);
   return json({ ok: true });
 }
 
@@ -198,6 +201,21 @@ export async function deleteProductImage({ request, db, params }) {
   const p = await getProduct(db, r.id, params.id);
   await db.rest('products', { method: 'PATCH', query: own(r.id, p.id), body: { image_path: null } });
   await queueImage(db, r.id, p.image_path);
+  return json({ ok: true });
+}
+
+// ---------------- modelos 3D (plan Premium) ----------------
+export async function uploadProductModel({ request, db, params }) {
+  const { restaurant: r } = await ctx(request, db);
+  const p = await getProduct(db, r.id, params.id);
+  const row = await attachModel({ db, restaurant: r, product: p, request });
+  return json({ product: withUrl(db, row) });
+}
+
+export async function deleteProductModel({ request, db, params }) {
+  const { restaurant: r } = await ctx(request, db);
+  const p = await getProduct(db, r.id, params.id);
+  await detachModel({ db, restaurant: r, product: p });
   return json({ ok: true });
 }
 
@@ -318,13 +336,13 @@ async function cleanupImages(db, rid) {
   const pending = await db.rest('pending_image_deletes', { query: { select: 'path', restaurant_id: `eq.${rid}` } });
   if (!pending.length) return;
   const refs = new Set();
-  (await db.rest('products', { query: { select: 'image_path', restaurant_id: `eq.${rid}` } })).forEach((p) => p.image_path && refs.add(p.image_path));
+  (await db.rest('products', { query: { select: 'image_path,model_path', restaurant_id: `eq.${rid}` } })).forEach((p) => { if (p.image_path) refs.add(p.image_path); if (p.model_path) refs.add(p.model_path); });
   (await db.rest('menu_settings', { query: { select: 'logo_path,cover_path', restaurant_id: `eq.${rid}` } })).forEach((s) => { if (s.logo_path) refs.add(s.logo_path); if (s.cover_path) refs.add(s.cover_path); });
   const [v] = await db.rest('menu_versions', { query: { select: 'snapshot', restaurant_id: `eq.${rid}`, order: 'version.desc', limit: '1' } });
   if (v) {
     if (v.snapshot.logo_path) refs.add(v.snapshot.logo_path);
     if (v.snapshot.cover_path) refs.add(v.snapshot.cover_path);
-    for (const c of v.snapshot.categories) for (const p of c.products) if (p.image_path) refs.add(p.image_path);
+    for (const c of v.snapshot.categories) for (const p of c.products) { if (p.image_path) refs.add(p.image_path); if (p.model_path) refs.add(p.model_path); }
   }
   // Solo se borra lo que ya nadie usa y que pertenece a este restaurante.
   const doomed = pending.map((p) => p.path).filter((p) => !refs.has(p) && p.startsWith(`${rid}/`));

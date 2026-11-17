@@ -50,15 +50,15 @@ async function tokenRequest(grant, body) {
   return {};
 }
 
-async function api(path, { method = 'GET', body } = {}) {
+async function api(path, { method = 'GET', body, raw, type } = {}) {
   if (session && Date.now() > session.expires_at) {
     const r = await tokenRequest('refresh_token', { refresh_token: session.refresh_token });
     if (r.error) { saveSession(null); return renderLogin('Tu sesión venció. Volvé a ingresar.'), Promise.reject(new Error('sesión')); }
   }
   const res = await fetch(`/api${path}`, {
     method,
-    headers: { authorization: `Bearer ${session?.access_token}`, ...(body ? { 'content-type': 'application/json' } : {}) },
-    body: body ? JSON.stringify(body) : undefined,
+    headers: { authorization: `Bearer ${session?.access_token}`, ...(raw ? { 'content-type': type } : body ? { 'content-type': 'application/json' } : {}) },
+    body: raw ?? (body ? JSON.stringify(body) : undefined),
   });
   const data = await res.json().catch(() => ({}));
   if (res.status === 401) { saveSession(null); renderLogin('Tu sesión venció. Volvé a ingresar.'); throw new Error('sesión'); }
@@ -157,6 +157,9 @@ function viewDetail() {
         h('button', { class: 'btn', onclick: () => showLink(r, 'invite') }, 'Invitación'),
         h('button', { class: 'btn', onclick: () => showLink(r, 'recovery') }, 'Recuperación'),
         h('button', { class: 'btn', onclick: () => changeEmailDlg(r, act) }, 'Cambiar correo'))),
+    h('div', { class: 'section' }, h('h3', {}, 'Modelos 3D (realidad aumentada)'),
+      h('p', { class: 'muted' }, 'Solo plan Premium. Subí o quitá el modelo GLB de cualquier platillo de este restaurante y ajustá cuántos puede tener.'),
+      h('div', { class: 'actions' }, h('button', { class: 'btn', onclick: () => modelsDlg(r) }, 'Administrar modelos 3D'))),
     h('div', { class: 'section' }, h('h3', {}, 'Zona peligrosa'),
       h('p', { class: 'muted' }, 'Eliminar borra el restaurante con su menú, fotos, pedidos, mesas y pagos, y la cuenta del propietario. No se puede deshacer.'),
       h('div', { class: 'actions' }, h('button', { class: 'btn danger', onclick: () => deleteDlg(r) }, 'Eliminar restaurante'))),
@@ -207,6 +210,39 @@ function confirmDlg(title, text, okLabel, onOk) {
     h('div', { class: 'actions' },
       h('button', { class: 'btn danger', onclick: () => { d.close(); onOk(); } }, okLabel),
       h('button', { class: 'btn', onclick: () => d.close(), autofocus: true }, 'Cancelar')));
+}
+async function modelsDlg(r) {
+  const body = h('div', {}, h('p', { class: 'muted' }, 'Cargando…'));
+  const d = dialog(h('h2', {}, `Modelos 3D de ${r.name}`), body,
+    h('div', { class: 'actions' }, h('button', { class: 'btn', onclick: () => d.close() }, 'Cerrar')));
+  const MAX = 8 * 1024 * 1024;
+  async function load() {
+    try {
+      const { enabled, models, products } = await api(`/admin/restaurants/${r.id}/products`);
+      const limit = h('input', { id: 'mlimit', type: 'number', min: '0', max: '200', value: String(models.limit), 'aria-label': 'Máximo de modelos' });
+      const rows = products.map((p) => {
+        const file = h('input', { type: 'file', accept: '.glb,model/gltf-binary', class: 'hidden', 'aria-label': `Modelo de ${p.name}` });
+        file.addEventListener('change', async () => {
+          const f = file.files[0]; file.value = ''; if (!f) return;
+          if (!/\.glb$/i.test(f.name)) return toast('El archivo tiene que ser .glb.');
+          if (f.size > MAX) return toast('El modelo supera los 8 MB.');
+          try { await api(`/admin/restaurants/${r.id}/products/${p.id}/model`, { method: 'POST', raw: f, type: 'model/gltf-binary' }); toast('Modelo subido. Falta que el dueño publique.'); await load(); }
+          catch (e) { if (e.message !== 'sesión') toast(e.message); }
+        });
+        return h('tr', {}, h('td', {}, p.name), h('td', {}, p.category), h('td', {}, p.has_model ? 'Con modelo' : '—'),
+          h('td', {}, enabled && h('button', { class: 'btn small', onclick: () => file.click() }, p.has_model ? 'Reemplazar' : 'Subir'), file,
+            p.has_model && h('button', { class: 'btn small danger ml', onclick: async () => { try { await api(`/admin/restaurants/${r.id}/products/${p.id}/model`, { method: 'DELETE' }); toast('Modelo quitado'); await load(); } catch (e) { if (e.message !== 'sesión') toast(e.message); } } }, 'Quitar')));
+      });
+      body.replaceChildren(
+        !enabled && h('p', { class: 'form-error' }, 'Este restaurante no tiene plan Premium: los modelos no se pueden subir ni se muestran a los clientes.'),
+        h('p', {}, `Usa ${models.used} de ${models.limit} modelos permitidos.`),
+        h('div', { class: 'actions' }, h('label', { for: 'mlimit' }, 'Máximo permitido'), limit,
+          h('button', { class: 'btn small', onclick: async () => { try { await api(`/admin/restaurants/${r.id}`, { method: 'PATCH', body: { model_limit: Number(limit.value) } }); toast('Límite actualizado'); await load(); } catch (e) { if (e.message !== 'sesión') toast(e.details?.model_limit || e.message); } } }, 'Guardar límite')),
+        products.length ? h('div', { class: 'scroll' }, h('table', {}, h('thead', {}, h('tr', {}, ['Platillo', 'Categoría', 'Estado', ''].map((t) => h('th', {}, t)))), h('tbody', {}, rows)))
+          : h('p', { class: 'empty' }, 'Este restaurante todavía no tiene platillos.'));
+    } catch (e) { if (e.message !== 'sesión') body.replaceChildren(h('p', { class: 'form-error' }, e.message)); }
+  }
+  load();
 }
 function changeEmailDlg(r, act) {
   const input = h('input', { id: 'newemail', type: 'email', autocomplete: 'off', required: true, value: r.owner_email || '' });
@@ -300,7 +336,7 @@ function openCreate() {
 }
 
 // ---------- actividad ----------
-const ACCION = { restaurante_creado: 'Restaurante creado', plan_cambiado: 'Plan cambiado', cuenta_suspendida: 'Cuenta suspendida', cuenta_reactivada: 'Cuenta reactivada', datos_editados: 'Datos editados', pago_registrado: 'Pago registrado', invitacion_generada: 'Invitación generada', recuperacion_generada: 'Recuperación generada' };
+const ACCION = { restaurante_creado: 'Restaurante creado', plan_cambiado: 'Plan cambiado', cuenta_suspendida: 'Cuenta suspendida', cuenta_reactivada: 'Cuenta reactivada', datos_editados: 'Datos editados', pago_registrado: 'Pago registrado', invitacion_generada: 'Invitación generada', recuperacion_generada: 'Recuperación generada', modelo_3d_subido: 'Modelo 3D subido', modelo_3d_quitado: 'Modelo 3D quitado', limite_modelos_cambiado: 'Límite de modelos cambiado' };
 async function viewAudit() {
   const box = document.getElementById('audit');
   box.replaceChildren(h('h2', {}, 'Actividad administrativa'), h('p', { class: 'muted' }, 'Cargando…'));

@@ -47,6 +47,12 @@ export function validateRestaurantInput(b, { partial = false } = {}) {
   if (!partial || b.plan !== undefined) {
     PLANS.includes(b.plan) ? (out.plan = b.plan) : (errors.plan = 'Elegí un plan válido.');
   }
+  if (b.model_limit !== undefined) {
+    const n = typeof b.model_limit === 'number' ? b.model_limit : Number(b.model_limit);
+    Number.isInteger(n) && n >= 0 && n <= 200
+      ? (out.model_limit = n)
+      : (errors.model_limit = 'El límite de modelos 3D debe ser un número entero entre 0 y 200.');
+  }
   if (b.status !== undefined) {
     ['activo', 'suspendido'].includes(b.status)
       ? (out.status = b.status)

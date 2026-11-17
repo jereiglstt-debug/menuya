@@ -34,6 +34,7 @@ export const FEATURES = {
   estadisticas: 'premium',
   notificaciones_panel: 'premium',
   notificaciones_whatsapp: 'premium',
+  modelos_3d: 'premium',
 };
 
 export function isValidPlan(plan) {
