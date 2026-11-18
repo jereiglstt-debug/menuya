@@ -8,8 +8,8 @@ export const JPEG = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3, 4, 5, 6]);
 export const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2]);
 
 export function makeWorld() {
-  const t = { restaurants: [], restaurant_owners: [], platform_admins: [], categories: [], products: [], menu_settings: [], menu_versions: [], pending_image_deletes: [], audit_log: [], promotions: [],
-    restaurant_ordering: [], restaurant_payment_settings: [], restaurant_tables: [], orders: [], order_items: [], order_status_history: [] };
+  const t = { restaurants: [], restaurant_owners: [], platform_admins: [], payments: [], categories: [], products: [], menu_settings: [], menu_versions: [], pending_image_deletes: [], audit_log: [], promotions: [],
+    restaurant_ordering: [], restaurant_payment_settings: [], restaurant_tables: [], orders: [], order_items: [], order_status_history: [], credit_accounts: [], credit_entries: [] };
   const uploads = []; const storage = new Map(); const users = {}; let tick = 0;
   const now = () => new Date(Date.UTC(2026, 9, 28, 12, 0, tick++)).toISOString();
   const reply = (d, s = 200) => new Response(d === undefined ? null : JSON.stringify(d), { status: s });
@@ -17,7 +17,7 @@ export function makeWorld() {
 
   function addUser(name) { users[name] = { id: `u-${name}`, email: `${name}@x.com` }; return `aaa.${name}.zzz`; }
   function addRestaurant(slug, owner, { plan = 'basico', status = 'activo' } = {}) {
-    const r = { id: crypto.randomUUID(), slug, name: `Local ${slug}`, description: '', plan, status, draft_changed_at: null };
+    const r = { id: crypto.randomUUID(), slug, name: `Local ${slug}`, description: '', plan, status, draft_changed_at: null, created_at: new Date().toISOString() };
     t.restaurants.push(r);
     if (owner) t.restaurant_owners.push({ restaurant_id: r.id, user_id: users[owner].id, email: users[owner].email });
     return r;
@@ -55,13 +55,14 @@ export function makeWorld() {
       if (!r) return reply({ code: 'P0002' }, 404);
       let label = null;
       if (a.p_table) { const tb = t.restaurant_tables.find((x) => x.id === a.p_table && x.restaurant_id === r.id && x.active); if (!tb) return reply({ code: 'P0002' }, 404); label = tb.label; }
+      if (a.p_credit && !t.credit_accounts.some((x) => x.id === a.p_credit && x.restaurant_id === r.id && x.active)) return reply({ code: 'P0002' }, 404);
       if (!Array.isArray(a.p_items) || a.p_items.length < 1 || a.p_items.length > 40) return reply({ code: 'P0001', message: 'Pedido inválido' }, 400);
       if (t.orders.some((o) => o.tracking_token === a.p_token)) return reply({ code: '23505' }, 409);
       const subtotal = a.p_items.reduce((x, i) => x + i.price * i.qty, 0);
       const fee = a.p_type === 'delivery' ? (a.p_fee || 0) : 0;
       const number = Math.max(0, ...t.orders.filter((o) => o.restaurant_id === r.id).map((o) => o.number)) + 1;
       const o = { id: crypto.randomUUID(), restaurant_id: r.id, number, tracking_token: a.p_token, type: a.p_type, status: 'nuevo', table_id: a.p_table ?? null, table_label: label,
-        customer_name: a.p_name || '', customer_phone: a.p_phone || '', address: a.p_address || '', note: a.p_note || '', payment_method: a.p_payment ?? null, payment_combo: a.p_combo ?? null,
+        customer_name: a.p_name || '', customer_phone: a.p_phone || '', address: a.p_address || '', note: a.p_note || '', payment_method: a.p_payment ?? null, payment_combo: a.p_combo ?? null, credit_account_id: a.p_credit ?? null,
         subtotal, delivery_fee: fee, total: subtotal + fee, created_at: now() };
       t.orders.push(o);
       a.p_items.forEach((i) => t.order_items.push({ order_id: o.id, restaurant_id: r.id, product_id: i.product_id, name: i.name, unit_price: i.price, qty: i.qty, created_at: now() }));
@@ -73,8 +74,19 @@ export function makeWorld() {
       if (!o) return reply({ code: 'P0002' }, 404);
       const ok = { nuevo: ['en_preparacion', 'cancelado'], en_preparacion: ['listo', 'cancelado'], listo: ['entregado', 'cancelado'] }[o.status]?.includes(a.p_to);
       if (!ok) return reply({ code: 'P0001', message: 'No se puede cambiar el estado.' }, 400);
+      if (a.p_to === 'en_preparacion' && o.payment_method === 'cuenta_corriente') {
+        if (!o.credit_account_id) return reply({ code: 'P0001', message: 'Elegí a qué cuenta corriente se carga este pedido.' }, 400);
+        if (o.total > 0 && !t.credit_entries.some((e) => e.order_id === o.id)) t.credit_entries.push({ id: crypto.randomUUID(), restaurant_id: o.restaurant_id, account_id: o.credit_account_id, kind: 'consumo', amount: o.total, description: `Pedido #${o.number}`, method: null, occurred_on: '2026-10-28', order_id: o.id, voided_at: null, created_by: a.p_actor, created_at: now() });
+      }
+      if (a.p_to === 'cancelado') t.credit_entries.filter((e) => e.order_id === o.id && !e.voided_at).forEach((e) => { e.voided_at = now(); });
       o.status = a.p_to; t.order_status_history.push({ order_id: o.id, restaurant_id: o.restaurant_id, status: a.p_to, changed_by: a.p_actor, created_at: now() });
       return reply(undefined, 204);
+    }
+    if (fn === 'credit_balances') {
+      return reply(t.credit_accounts.filter((x) => x.restaurant_id === a.p_restaurant).map((x) => {
+        const es = t.credit_entries.filter((e) => e.account_id === x.id && !e.voided_at);
+        return { account_id: x.id, balance: es.reduce((n, e) => n + (e.kind === 'consumo' ? 1 : -1) * Number(e.amount), 0), last_on: es.map((e) => e.occurred_on).sort().at(-1) ?? null };
+      }));
     }
     return reply({ message: 'rpc?' }, 404);
   }
@@ -91,7 +103,7 @@ export function makeWorld() {
     const tbl = m[1]; const rows = t[tbl]; const wantRows = /representation/.test(init.headers?.prefer || '');
     if (method === 'GET') { let r = sorted(rows.filter((x) => match(x, u)), u.searchParams.get('order')); if (u.searchParams.get('limit')) r = r.slice(0, +u.searchParams.get('limit')); return reply(r.map((x) => ({ ...x }))); }
     if (method === 'POST') {
-      const row = { id: crypto.randomUUID(), created_at: now(), ...(tbl === 'products' ? { featured: false } : {}), ...(tbl === 'restaurant_tables' ? { active: true } : {}), ...(tbl === 'restaurant_ordering' ? { state: 'cerrado', accept_mesa: true, accept_take_away: true, accept_delivery: false, delivery_fee: 0 } : {}), ...body };
+      const row = { id: crypto.randomUUID(), created_at: now(), ...(tbl === 'products' ? { featured: false } : {}), ...(tbl === 'restaurant_tables' || tbl === 'credit_accounts' ? { active: true } : {}), ...(tbl === 'credit_entries' ? { voided_at: null, occurred_on: '2026-10-28' } : {}), ...(tbl === 'restaurant_ordering' ? { state: 'cerrado', accept_mesa: true, accept_take_away: true, accept_delivery: false, delivery_fee: 0 } : {}), ...body };
       if (tbl === 'pending_image_deletes' && rows.some((x) => x.path === body.path)) return reply({ code: '23505' }, 409);
       if (tbl === 'products' && !t.categories.some((c) => c.id === body.category_id && c.restaurant_id === body.restaurant_id)) return reply({ code: '23503' }, 409);
       rows.push(row); if (['categories', 'products', 'menu_settings', 'promotions'].includes(tbl)) touch(body.restaurant_id);

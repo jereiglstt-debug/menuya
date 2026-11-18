@@ -9,7 +9,8 @@ let chromium; try { ({ chromium } = require('playwright')); } catch { ({ chromiu
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '../..');
 const { makeWorld, makeGlb } = await import(`${ROOT}/test/world.js`);
 const w = makeWorld();
-const tokens = { 'pro@x.com': w.addUser('pro'), 'bas@x.com': w.addUser('bas'), 'prem@x.com': w.addUser('prem') };
+const tokens = { 'pro@x.com': w.addUser('pro'), 'bas@x.com': w.addUser('bas'), 'prem@x.com': w.addUser('prem'), 'adm@x.com': w.addUser('admin') };
+w.t.platform_admins.push({ user_id: 'u-admin' });
 w.addRestaurant('res-pro', 'pro', { plan: 'profesional' });
 w.addRestaurant('res-bas', 'bas', { plan: 'basico' });
 w.addRestaurant('res-prem', 'prem', { plan: 'premium' });
@@ -69,7 +70,7 @@ async function login(page, email) {
 // ---- Profesional ----
 {
   const page = await newPage(); await login(page, 'pro@x.com');
-  ok('panel: pestañas', (await page.locator('.tab').allTextContents()).join('|') === 'Menú|Pedidos|Promociones|Diseño|Código QR|Métodos de pago');
+  ok('panel: pestañas', (await page.locator('.tab').allTextContents()).join('|') === 'Menú|Pedidos|Cuentas corrientes|Promociones|Diseño|Código QR|Métodos de pago');
   await page.click('text=Nueva categoría'); await page.fill('#dlg-in', 'Pizzas'); await page.click('dialog button:has-text("Crear")');
   await page.waitForSelector('.cat');
   await page.click('text=Agregar producto').catch(async () => { await page.click('.cat >> text=/Agregar|Nuevo/'); });
@@ -194,6 +195,79 @@ async function login(page, email) {
   ok('estadísticas visibles', await page.locator('.stat').count() >= 6);
 }
 
+// ---- Cuentas corrientes (Premium) ----
+{
+  const tk = tokens['prem@x.com'];
+  await w.call(tk, 'PATCH', '/owner/ordering', { state: 'abierto' });
+  const page = await newPage(); await login(page, 'prem@x.com');
+  await page.click('.tab[data-k=cuentas]'); await page.waitForSelector('text=Todavía no creaste cuentas');
+  ok('cuentas: lista vacía con ayuda', true);
+  await page.click('button:has-text("Nueva cuenta")');
+  await page.fill('#ca-name', 'Juan Pérez'); await page.fill('#ca-phone', '549 388 1234567'); await page.fill('#ca-limit', '20000');
+  await page.click('dialog button:has-text("Guardar")'); await page.waitForSelector('.promo-row');
+  const acc = w.t.credit_accounts[0];
+  ok('cuentas: se crea con código de 4 números', /^\d{4}$/.test(acc.code) && acc.credit_limit === 20000, acc.code);
+  ok('cuentas: la lista muestra el código', (await page.textContent('.promo-row')).includes(`Código ${acc.code}`));
+  await page.click('.promo-row button:has-text("Abrir")'); await page.waitForSelector('text=Movimientos');
+  await page.click('button:has-text("Cargar consumo")'); await page.fill('#ce-amount', '15000'); await page.fill('#ce-desc', 'Cena del viernes');
+  await page.click('dialog button:has-text("Cargar consumo")'); await page.waitForSelector('.big-balance strong');
+  ok('cuentas: consumo manual suma al saldo', (await page.textContent('.big-balance')).includes('15.000'));
+  await page.click('button:has-text("Registrar pago")'); await page.fill('#ce-amount', '5000'); await page.selectOption('#ce-method', 'transferencia');
+  await page.click('dialog button:has-text("Registrar pago")'); await page.waitForFunction(() => document.querySelector('.big-balance')?.textContent.includes('10.000'));
+  ok('cuentas: el pago baja el saldo', true);
+  await page.click('button:has-text("Cargar consumo")'); await page.fill('#ce-amount', '12000'); await page.fill('#ce-desc', 'Almuerzo');
+  await page.click('dialog button:has-text("Cargar consumo")'); await page.waitForSelector('.form-error:has-text("superó su límite")');
+  ok('cuentas: avisa cuando pasa el límite (y guarda igual)', w.t.credit_entries.length === 3);
+  await page.screenshot({ path: '/tmp/e2e-cuenta-detalle.png', fullPage: true });
+  await page.click('button:has-text("Resumen del mes")'); await page.waitForSelector('.stmt');
+  ok('resumen: muestra consumos, pagos y saldo a pagar', /Saldo a pagar[\s\S]*22\.000/.test(await page.textContent('.stmt')));
+  const href = await page.getAttribute('dialog a:has-text("WhatsApp")', 'href');
+  ok('resumen: enlace de WhatsApp con el detalle', href.startsWith('https://wa.me/5493881234567?text=') && decodeURIComponent(href).includes('Saldo a pagar'));
+  await page.screenshot({ path: '/tmp/e2e-cuenta-resumen.png' });
+  await page.click('dialog button:has-text("Cerrar")');
+  // anular un movimiento
+  await page.click('.ce-list li:has-text("Almuerzo") button:has-text("Anular")'); await page.click('dialog button:has-text("Anular")');
+  await page.waitForFunction(() => document.querySelector('.big-balance')?.textContent.includes('10.000'));
+  ok('cuentas: anular devuelve el saldo y deja rastro', await page.locator('.ce-list li.off').count() === 1);
+
+  // el local ofrece "cuenta corriente" como medio de pago
+  await page.click('.tab[data-k=pagos]'); await page.waitForSelector('#pm-cuenta_corriente');
+  await page.check('#pm-cuenta_corriente'); await page.click('text=Guardar métodos de pago'); await page.waitForSelector('.toast >> text=Métodos de pago guardados');
+  ok('pagos: se habilita cuenta corriente', w.t.restaurant_payment_settings.some((x) => x.methods.includes('cuenta_corriente')));
+
+  // el cliente pide con su código
+  const cli = await newPage(); await cli.goto(`${base}/res-prem`); await cli.waitForSelector('.menu');
+  await cli.locator('#m-cat-0 .m-add').first().click(); await cli.click('.m-bar .m-btn'); await cli.waitForSelector('dialog.m-cart[open] form');
+  await cli.selectOption('#o-type', 'take_away'); await cli.fill('#o-name', 'Juan'); await cli.fill('#o-phone', '549 388 1234567');
+  ok('pedido: el campo de código está oculto hasta elegir cuenta corriente', await cli.locator('#o-credit').isHidden());
+  await cli.selectOption('#o-pay', 'cuenta_corriente'); await cli.waitForSelector('#o-credit', { state: 'visible' });
+  await cli.fill('#o-credit', '12'); await cli.click('text=Confirmar pedido');
+  await cli.waitForSelector('[data-f=credit_code] .m-field-err:not(.hidden)');
+  ok('pedido: código incompleto → error en el campo', true);
+  await cli.fill('#o-credit', acc.code === '0000' ? '1111' : '0000'); await cli.click('text=Confirmar pedido');
+  await cli.waitForFunction(() => /no es válido/.test(document.querySelector('[data-f=credit_code] .m-field-err')?.textContent || ''));
+  ok('pedido: código que no existe → error sin datos del cliente', !/Juan|Pérez/.test(await cli.textContent('dialog.m-cart')));
+  await cli.screenshot({ path: '/tmp/e2e-pedido-cuenta.png' });
+  await cli.fill('#o-credit', acc.code); await cli.click('text=Confirmar pedido'); await cli.waitForSelector('.m-order-num');
+  ok('pedido: con el código correcto se confirma', true);
+  ok('pedido: no se cargó nada hasta que el dueño acepte', w.t.credit_entries.filter((e) => e.order_id).length === 0);
+  ok('pedido: el cliente no ve la cuenta', !/Juan Pérez|cuenta corriente|saldo/i.test(await cli.textContent('dialog.m-cart')));
+
+  // el dueño lo ve, con la cuenta y el saldo
+  await page.click('.tab[data-k=pedidos]'); await page.click('.sub .tab:has-text("Cola")');
+  await page.waitForSelector('.o-credit', { timeout: 20000 });
+  const txt = await page.textContent('.o-credit');
+  ok('cola: muestra la cuenta, el saldo y la advertencia', txt.includes('Cuenta corriente') && txt.includes('Saldo actual') && txt.includes('límite'), txt);
+  ok('cola: se puede elegir/cambiar la cuenta mientras está nuevo', await page.locator('.o-credit select').count() === 1 && (await page.locator('.o-credit select').inputValue()) === acc.id);
+  await page.screenshot({ path: '/tmp/e2e-cola-cuenta.png', fullPage: true });
+  await page.click('text=Aceptar y preparar'); await page.waitForSelector('.order.st-en_preparacion');
+  ok('aceptar: se cargó el pedido a la cuenta', w.t.credit_entries.some((e) => e.order_id && e.kind === 'consumo' && e.amount === 9500));
+  await page.click('.tab[data-k=cuentas]'); await page.waitForSelector('.promo-row');
+  ok('cuentas: el saldo incluye el pedido', (await page.textContent('.promo-row')).includes('19.500'));
+  await page.click('.promo-row button:has-text("Abrir")'); await page.waitForSelector('.ce-list');
+  ok('cuentas: el movimiento del pedido está marcado', await page.locator('.ce-list .tag-star:has-text("Pedido")').count() === 1);
+}
+
 // ---- Editor de fotos + portada como fondo del encabezado + admin ----
 {
   const { execFileSync } = await import('node:child_process');
@@ -306,15 +380,36 @@ Image.new('RGBA', (300, 200), (10, 160, 80, 255)).save('${dir}/chica.png')
   await login(page, 'prem@x.com');
   await page.click('text=Nueva categoría'); await page.fill('#dlg-in', 'Pizzas'); await page.click('dialog button:has-text("Crear")'); await page.waitForSelector('.cat');
   await page.click('.cat >> text=/Agregar|Nuevo/'); await page.fill('#f-name', 'Pizza AR'); await page.fill('#f-price', '9000');
-  ok('panel Premium: campo de modelo 3D visible', await page.locator('dialog.wide .model-box').count() === 1);
-  // archivo que no es .glb → rechazado en el panel
-  await page.setInputFiles('input[aria-label="Elegir modelo 3D"]', { name: 'foto.jpg', mimeType: 'image/jpeg', buffer: Buffer.from([1, 2, 3]) });
-  ok('panel: rechaza un archivo que no es .glb', (await page.textContent('dialog.wide .model-box')).includes('Sin modelo 3D'));
-  await page.setInputFiles('input[aria-label="Elegir modelo 3D"]', { name: 'pizza.glb', mimeType: 'model/gltf-binary', buffer: Buffer.from(makeGlb()) });
-  ok('panel: muestra el archivo listo para subir', (await page.textContent('dialog.wide .model-box')).includes('pizza.glb'));
-  await page.click('dialog.wide button:has-text("Crear producto")'); await page.waitForSelector('text=Pizza AR'); await page.waitForTimeout(400);
-  ok('panel: el modelo se subió al servidor', w.t.products.some((x) => x.name === 'Pizza AR' && /\.glb$/.test(x.model_path || '')));
+  ok('panel Premium: aviso de modelo 3D (solo lectura)', (await page.textContent('dialog.wide .model-box')).includes('no tiene modelo 3D'));
+  ok('panel Premium: el dueño NO tiene botón ni campo para subir modelos',
+    await page.locator('input[aria-label="Elegir modelo 3D"]').count() === 0 && await page.locator('dialog.wide >> text=Elegir archivo .glb').count() === 0
+    && await page.locator('dialog.wide input[type=file]').count() === 1 /* solo la foto */);
+  await page.click('dialog.wide button:has-text("Crear producto")'); await page.waitForSelector('text=Pizza AR'); await page.waitForTimeout(300);
+  ok('panel: sin modelo todavía', !w.t.products.some((x) => x.model_path));
+  // ---- el ADMINISTRADOR carga el modelo desde su panel ----
+  const adm = await newPage();
+  await adm.goto(`${base}/admin/`);
+  await adm.fill('#e', 'adm@x.com'); await adm.fill('#p', 'x'); await adm.click('button[type=submit]');
+  await adm.waitForSelector('.ritem');
+  await adm.click('.ritem:has-text("/res-prem")');
+  await adm.click('button:has-text("Administrar modelos 3D")'); await adm.waitForSelector('dialog[open] table');
+  ok('admin: lista los platillos del restaurante', (await adm.textContent('dialog[open] table')).includes('Pizza AR'));
+  await adm.setInputFiles('input[aria-label="Modelo de Pizza AR"]', { name: 'foto.jpg', mimeType: 'image/jpeg', buffer: Buffer.from([1, 2, 3]) });
+  await adm.waitForTimeout(200);
+  ok('admin: rechaza en pantalla un archivo que no es .glb', !w.t.products.some((x) => x.model_path));
+  await adm.setInputFiles('input[aria-label="Modelo de Pizza AR"]', { name: 'pizza.glb', mimeType: 'model/gltf-binary', buffer: Buffer.from(makeGlb()) });
+  await adm.waitForFunction(() => document.querySelector('dialog[open] table')?.textContent.includes('Con modelo'));
+  ok('admin: el modelo se subió y la fila muestra "Con modelo"', w.t.products.some((x) => x.name === 'Pizza AR' && /\.glb$/.test(x.model_path || '')));
+  await adm.fill('#mlimit', '3'); await adm.click('dialog[open] button:has-text("Guardar")');
+  await adm.waitForFunction(() => document.querySelector('dialog[open]')?.textContent.includes("de 3 modelos"));
+  ok('admin: cambia el límite de modelos del restaurante', true);
+  await adm.screenshot({ path: '/tmp/e2e-admin-modelos.png' });
+  // ---- el dueño recarga: lo ve, solo lectura ----
+  await page.reload(); await page.waitForSelector('.tabs');
   ok('panel: etiqueta "AR 3D" en la lista', await page.locator('.prow .tag-ar').count() === 1);
+  await page.click('.prow button:has-text("Editar")');
+  ok('panel: el dueño ve que el platillo tiene modelo, sin poder quitarlo', (await page.textContent('dialog.wide .model-box')).includes('tiene modelo 3D') && await page.locator('dialog.wide >> text=Quitar modelo').count() === 0);
+  await page.click('dialog.wide button:has-text("Cancelar")');
   await page.click('text=Publicar cambios'); await page.waitForSelector('text=Tu menú está al día');
   // público
   const pub = await newPage();
