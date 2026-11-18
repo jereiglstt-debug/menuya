@@ -1,0 +1,442 @@
+// Prueba de navegador (Chromium + Playwright) contra el servidor simulado, con el CSP real de public/_headers.
+// NO forma parte de `npm test` (necesita Playwright): node test/e2e/navegador.mjs
+import http from 'node:http';
+import fs from 'node:fs';
+import path from 'node:path';
+import { createRequire } from 'node:module';
+const require = createRequire(import.meta.url);
+let chromium; try { ({ chromium } = require('playwright')); } catch { ({ chromium } = (await import('playwright'))); }
+const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '../..');
+const { makeWorld, makeGlb } = await import(`${ROOT}/test/world.js`);
+const w = makeWorld();
+const tokens = { 'pro@x.com': w.addUser('pro'), 'bas@x.com': w.addUser('bas'), 'prem@x.com': w.addUser('prem'), 'adm@x.com': w.addUser('admin') };
+w.t.platform_admins.push({ user_id: 'u-admin' });
+w.addRestaurant('res-pro', 'pro', { plan: 'profesional' });
+w.addRestaurant('res-bas', 'bas', { plan: 'basico' });
+w.addRestaurant('res-prem', 'prem', { plan: 'premium' });
+const csp = fs.readFileSync(`${ROOT}/public/_headers`, 'utf8').match(/Content-Security-Policy: (.*)/)[1];
+const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css' };
+const server = http.createServer(async (req, res) => {
+  const u = new URL(req.url, 'http://x');
+  const chunks = []; for await (const c of req) chunks.push(c); const buf = Buffer.concat(chunks);
+  const send = (s, body, type = 'application/json') => { res.writeHead(s, { 'content-type': type, 'content-security-policy': csp }); res.end(body); };
+  if (u.pathname === '/api/config') return send(200, JSON.stringify({ supabaseUrl: `http://localhost:${server.address().port}`, supabaseAnonKey: 'anon' }));
+  if (u.pathname === '/auth/v1/token') {
+    const b = JSON.parse(buf.toString()); const t = tokens[b.email];
+    return t ? send(200, JSON.stringify({ access_token: t, refresh_token: 'r', expires_in: 3600 })) : send(400, '{}');
+  }
+  if (u.pathname.startsWith('/storage/v1/object/public/menu-images/')) {
+    const k = decodeURIComponent(u.pathname.replace('/storage/v1/object/public/menu-images/', ''));
+    const up = [...w.uploads].reverse().find((x) => x.key === k);
+    return up ? send(200, up.bytes, k.endsWith('.glb') ? 'model/gltf-binary' : k.endsWith('.png') ? 'image/png' : 'image/jpeg') : send(404, '');
+  }
+  if (u.pathname.startsWith('/api/')) {
+    const token = (req.headers.authorization || '').replace('Bearer ', '') || null;
+    const ct = req.headers['content-type'] || '';
+    const isJson = ct.includes('json');
+    const r = await w.call(token, req.method, u.pathname.slice(4) + u.search,
+      isJson && buf.length ? JSON.parse(buf.toString()) : undefined, !isJson && buf.length ? { raw: new Uint8Array(buf), type: ct } : {});
+    return send(r.status, JSON.stringify(r.body ?? {}));
+  }
+  let f = path.join(ROOT, 'public', u.pathname);
+  if (u.pathname.endsWith('/')) f = path.join(f, 'index.html');
+  if (!fs.existsSync(f) || fs.statSync(f).isDirectory()) f = path.join(ROOT, 'public/menu/index.html'); // /<slug>
+  send(200, fs.readFileSync(f), MIME[path.extname(f)] || 'application/octet-stream');
+});
+await new Promise((r) => server.listen(0, r));
+const base = `http://localhost:${server.address().port}`;
+
+const browser = await chromium.launch();
+const results = []; const problems = [];
+const ok = (name, cond, extra = '') => { results.push([cond, name, extra]); };
+async function newPage() {
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 800 } });
+  const page = await ctx.newPage();
+  await page.route(/^https?:\/\/(?!localhost)/, (r) => {
+    const m = r.request().url().match(/\/object\/public\/menu-images\/(.+)$/);
+    const up = m && [...w.uploads].reverse().find((x) => x.key === decodeURIComponent(m[1]));
+    return up ? r.fulfill({ status: 200, contentType: up.key.endsWith('.glb') ? 'model/gltf-binary' : up.key.endsWith('.png') ? 'image/png' : 'image/jpeg', body: up.bytes }) : r.abort();
+  });
+  page.on('console', (m) => { if (m.type() === 'error' && !/Failed to load resource|ERR_FAILED|net::/.test(m.text())) problems.push(`console: ${m.text()}`); });
+  page.on('pageerror', (e) => problems.push(`pageerror: ${e.message}`));
+  return page;
+}
+async function login(page, email) {
+  await page.goto(`${base}/panel/`);
+  await page.fill('#e', email); await page.fill('#p', 'x'); await page.click('button[type=submit]');
+  await page.waitForSelector('.tabs');
+}
+
+// ---- Profesional ----
+{
+  const page = await newPage(); await login(page, 'pro@x.com');
+  ok('panel: pestañas', (await page.locator('.tab').allTextContents()).join('|') === 'Menú|Pedidos|Cuentas corrientes|Promociones|Diseño|Código QR|Métodos de pago');
+  await page.click('text=Nueva categoría'); await page.fill('#dlg-in', 'Pizzas'); await page.click('dialog button:has-text("Crear")');
+  await page.waitForSelector('.cat');
+  await page.click('text=Agregar producto').catch(async () => { await page.click('.cat >> text=/Agregar|Nuevo/'); });
+  await page.fill('#f-name', 'Muzzarella'); await page.fill('#f-price', '9500'); await page.check('#f-ft');
+  await page.click('dialog button:has-text("Crear producto")'); await page.waitForSelector('.tag-star');
+  ok('producto destacado marcado en el panel', await page.locator('.tag-star').count() === 1);
+  await page.click('.cat >> text=/Agregar|Nuevo/'); await page.fill('#f-name', 'Fugazza'); await page.fill('#f-price', '8000');
+  await page.click('dialog button:has-text("Crear producto")'); await page.waitForSelector('text=Fugazza');
+  await page.fill('#b-wa', '+54 9 11 2233-4455'); await page.click('text=Guardar datos'); await page.waitForTimeout(400);
+  ok('whatsapp guardado normalizado', (await page.inputValue('#b-wa')) === '5491122334455');
+  await page.click('.tab:has-text("Promociones")'); await page.fill('#pr-t', '2x1 martes'); await page.fill('#pr-d', 'En pizzas'); await page.click('text=Agregar promoción');
+  await page.waitForSelector('.promo-row');
+  await page.click('.tab:has-text("Diseño")'); await page.waitForSelector('.design-prev .menu');
+  ok('diseño: promo y destacado en vista previa', await page.locator('.design-prev .m-promo').count() === 1 && await page.locator('.design-prev .m-featured').count() === 1);
+  await page.click('.opt:has-text("Moderno")'); await page.click('text=Guardar diseño'); await page.waitForTimeout(400);
+  await page.click('.tab:has-text("Código QR")'); await page.waitForSelector('canvas.qr-canvas');
+  ok('QR dibujado', await page.evaluate(() => document.querySelector('canvas.qr-canvas').width > 500));
+  await page.click('text=Publicar cambios'); await page.waitForSelector('text=Tu menú está al día');
+  // público
+  const pub = await newPage(); await pub.goto(`${base}/res-pro`); await pub.waitForSelector('.menu');
+  ok('público: plantilla moderno', (await pub.getAttribute('.menu', 'data-template')) === 'moderno');
+  ok('público: promo + destacados', await pub.locator('.m-promo').count() === 1 && await pub.locator('#m-destacados .m-item').count() === 1);
+  await pub.locator('#m-cat-0 .m-add').first().click(); await pub.locator('#m-cat-0 .m-add').first().click(); await pub.locator('#m-cat-0 .m-add').nth(1).click();
+  ok('carrito: barra con total', (await pub.locator('.m-bar .m-btn').textContent()).includes('3 productos'), await pub.locator('.m-bar .m-btn').textContent());
+  await pub.click('.m-bar .m-btn'); await pub.waitForSelector('dialog.m-cart[open]');
+  await pub.fill('#m-cust', 'Ana'); await pub.fill('#m-note', 'Sin cebolla');
+  const href = await pub.getAttribute('dialog.m-cart a.m-btn', 'href');
+  const text = new URL(href).searchParams.get('text');
+  ok('whatsapp: enlace y mensaje', href.startsWith('https://wa.me/5491122334455?text=') && /2 x Muzzarella/.test(text) && /Nombre: Ana/.test(text) && /Sin cebolla/.test(text), text);
+  await pub.screenshot({ path: '/tmp/e2e-pro-cart.png' });
+  await pub.click('dialog.m-cart .m-q >> nth=0'); await pub.waitForTimeout(100);
+  ok('carrito: quitar uno baja el contador', (await pub.locator('.m-bar .m-btn').textContent()).includes('2 productos'));
+  await pub.locator('dialog.m-cart .m-btn.alt').click();
+  await pub.screenshot({ path: '/tmp/e2e-pro-menu.png' });
+  // vista previa del panel
+  await page.click('.tab:has-text("Menú")'); await page.click('text=Vista previa'); await page.waitForSelector('dialog .preview-frame .menu');
+  ok('vista previa del panel con carrito', await page.locator('dialog .preview-frame .m-add').count() >= 1);
+}
+// ---- Básico ----
+{
+  const page = await newPage(); await login(page, 'bas@x.com');
+  await page.click('text=Nueva categoría'); await page.fill('#dlg-in', 'Café'); await page.click('dialog button:has-text("Crear")'); await page.waitForSelector('.cat');
+  await page.click('.cat >> text=/Agregar|Nuevo/');
+  ok('básico: destacado bloqueado', await page.locator('#f-ft').count() === 0 && await page.locator('dialog .lock-note:has-text("Destacados")').count() === 1);
+  await page.fill('#f-name', 'Cortado'); await page.fill('#f-price', '2000'); await page.click('dialog button:has-text("Crear producto")'); await page.waitForSelector('text=Cortado');
+  await page.fill('#b-wa', '5491122334455'); await page.click('text=Guardar datos'); await page.waitForTimeout(300);
+  await page.click('.tab[data-k=pagos]'); await page.waitForSelector('#pm-efectivo');
+  await page.check('#pm-credito'); await page.click('text=Guardar métodos de pago'); await page.waitForSelector('.toast >> text=Métodos de pago guardados');
+  await page.click('.tab:has-text("Promociones")');
+  ok('básico: promociones bloqueadas', await page.locator('.lock-note').count() === 1 && await page.locator('#pr-t').count() === 0);
+  await page.click('.tab:has-text("Menú")'); await page.click('text=Publicar cambios'); await page.waitForSelector('text=Tu menú está al día');
+  const pub = await newPage(); await pub.goto(`${base}/res-bas`); await pub.waitForSelector('.menu');
+  ok('básico público: sin carrito, con consulta por WhatsApp', await pub.locator('.m-add').count() === 0 && await pub.locator('.m-bar a.m-btn').count() === 1);
+  ok('básico: medios de pago en el menú', /Medios de pago: Efectivo · Tarjeta de crédito/.test(await pub.textContent('.m-pay')));
+  ok('básico: enlace de consulta', (await pub.getAttribute('.m-bar a.m-btn', 'href')).startsWith('https://wa.me/5491122334455?text='));
+}
+// ---- Premium: pedidos nativos ----
+{
+  const tk = tokens['prem@x.com'];
+  const cat = (await w.call(tk, 'POST', '/owner/categories', { name: 'Pizzas' })).body.category;
+  await w.call(tk, 'POST', '/owner/products', { category_id: cat.id, name: 'Muzzarella', price_ars: 9500 });
+  await w.call(tk, 'POST', '/owner/products', { category_id: cat.id, name: 'Fugazza', price_ars: 8000 });
+  await w.call(tk, 'POST', '/owner/publish');
+  const page = await newPage(); await login(page, 'prem@x.com');
+  ok('premium: pestaña Pedidos', (await page.locator('.tab').allTextContents()).some((t) => t.startsWith('Pedidos')));
+  await page.click('.tab[data-k=pedidos]'); await page.waitForSelector('.state-bar button');
+  await page.click('.sub .tab:has-text("Mesas")'); await page.fill('#t-c', '3'); await page.click('text=Crear mesas'); await page.waitForSelector('.promo-row');
+  ok('mesas creadas', await page.locator('.promo-row').count() === 3);
+  await page.click('.sub .tab:has-text("Ajustes")'); await page.check('#a-del'); await page.fill('#a-fee', '1500');
+  await page.click('text=Guardar ajustes'); await page.waitForSelector('.toast >> text=Ajustes guardados');
+  await page.click('.state-bar button:has-text("Abrir")'); await page.waitForSelector('.state-bar .b-activo');
+  await page.click('.tab[data-k=pagos]'); await page.waitForSelector('#pm-efectivo');
+  await page.check('#pm-debito'); await page.check('#pm-combinado'); await page.waitForSelector('.pay-combo:not(.hidden)');
+  await page.click('text=Guardar métodos de pago'); await page.waitForTimeout(200);
+  ok('pagos: combinado exige 2 combinaciones', await page.locator('.form-error:not(.hidden)').count() === 1);
+  await page.check('#pc-efectivo'); await page.check('#pc-debito'); await page.click('text=Guardar métodos de pago'); await page.waitForSelector('.toast >> text=Métodos de pago guardados');
+  await page.screenshot({ path: '/tmp/e2e-pagos-tab.png' });
+  ok('pagos guardados en el servidor', JSON.stringify(w.t.restaurant_payment_settings.find((x) => x.methods.includes('combinado'))?.combo_options) === '["efectivo","debito"]');
+  await page.click('.tab[data-k=qr]'); await page.waitForSelector('.qr-table canvas');
+  ok('QR por mesa', await page.locator('.qr-table canvas').count() === 3);
+  const mesaId = w.t.restaurant_tables[0].id;
+
+  const cli = await newPage(); await cli.goto(`${base}/res-prem?mesa=${mesaId}`); await cli.waitForSelector('.menu');
+  await cli.locator('#m-cat-0 .m-add').first().click(); await cli.locator('#m-cat-0 .m-add').first().click();
+  await cli.click('.m-bar .m-btn'); await cli.waitForSelector('dialog.m-cart[open] form');
+  ok('pedido: opciones y mesa preseleccionada', (await cli.locator('#o-type').inputValue()) === 'mesa' && (await cli.locator('#o-type option').count()) === 3);
+  await cli.selectOption('#o-type', 'take_away'); await cli.click('text=Confirmar pedido');
+  await cli.waitForSelector('[data-f=customer_phone] .m-field-err:not(.hidden)');
+  ok('pedido: errores por campo', (await cli.locator('[data-f=customer_name] .m-field-err:not(.hidden)').count()) === 1);
+  ok('pago: opciones del cliente', (await cli.locator('#o-pay option').allTextContents()).join('|') === 'Elegí…|Efectivo|Tarjeta de débito|Combinado');
+  ok('pago: menú muestra medios', /Medios de pago: Efectivo · Tarjeta de débito · Combinado/.test(await cli.textContent('.m-pay')));
+  await cli.selectOption('#o-type', 'mesa'); await cli.fill('#o-name', 'Ana');
+  await cli.selectOption('#o-pay', 'combinado'); await cli.waitForSelector('.m-combo:visible');
+  await cli.check('#o-combo-efectivo'); await cli.click('text=Confirmar pedido');
+  await cli.waitForSelector('[data-f=payment_combo] .m-field-err:not(.hidden)');
+  ok('pago: combinado pide al menos dos', true);
+  await cli.check('#o-combo-debito'); await cli.locator('#o-pay').scrollIntoViewIfNeeded(); await cli.screenshot({ path: '/tmp/e2e-pago.png' }); await cli.click('text=Confirmar pedido');
+  await cli.waitForSelector('.m-order-num');
+  ok('pedido: confirmado y seguimiento', (await cli.textContent('.m-order-num')) === 'Pedido #1' && /Esperando/.test(await cli.textContent('.m-order-status')), await cli.textContent('.m-order-status'));
+  ok('seguimiento sin texto suelto', !/\bfalse\b|undefined|null/.test(await cli.textContent('dialog.m-cart')));
+  await cli.screenshot({ path: '/tmp/e2e-pedido.png' });
+  const o = w.t.orders[0];
+  ok('servidor: total y mesa', o.total === 19000 && o.table_label === 'Mesa 1');
+  ok('servidor: pago combinado guardado', o.payment_method === 'combinado' && JSON.stringify(o.payment_combo) === '["efectivo","debito"]');
+
+  // el dueño recibe el aviso por sondeo (≤ 15 s)
+  await page.click('.tab[data-k=pedidos]'); await page.click('.sub .tab:has-text("Cola")');
+  await page.waitForSelector('.order.st-nuevo', { timeout: 20000 });
+  ok('cola: llega el pedido', (await page.locator('.order.st-nuevo').textContent()).includes('Muzzarella'));
+  ok('cola: muestra el pago combinado', (await page.locator('.order.st-nuevo').textContent()).includes('Combinado (Efectivo + Tarjeta de débito)'));
+  ok('cola: insignia en la pestaña', /Pedidos \(1\)/.test(await page.textContent('.tab[data-k=pedidos]')));
+  await page.click('text=Aceptar y preparar'); await page.waitForSelector('.order.st-en_preparacion');
+  await page.screenshot({ path: '/tmp/e2e-cola.png', fullPage: true });
+  await cli.reload(); await cli.waitForSelector('.menu'); await cli.click('text=Ver el estado de mi pedido #1');
+  await cli.waitForSelector('.m-order-num');
+  ok('cliente ve el nuevo estado', /preparación/.test(await cli.textContent('.m-order-status')));
+  // pausar: el menú sigue pero sin pedidos
+  await page.click('.state-bar button:has-text("Pausar")'); await page.waitForSelector('.state-bar .b-vencido');
+  const cli2 = await newPage(); await cli2.goto(`${base}/res-prem`); await cli2.waitForSelector('.menu');
+  ok('pausado: aviso y sin botones de agregar', await cli2.locator('.m-closed').count() === 1 && await cli2.locator('.m-add').count() === 0);
+  await page.click('.sub .tab:has-text("Estadísticas")'); await page.waitForSelector('.stat-grid');
+  ok('estadísticas visibles', await page.locator('.stat').count() >= 6);
+}
+
+// ---- Cuentas corrientes (Premium) ----
+{
+  const tk = tokens['prem@x.com'];
+  await w.call(tk, 'PATCH', '/owner/ordering', { state: 'abierto' });
+  const page = await newPage(); await login(page, 'prem@x.com');
+  await page.click('.tab[data-k=cuentas]'); await page.waitForSelector('text=Todavía no creaste cuentas');
+  ok('cuentas: lista vacía con ayuda', true);
+  await page.click('button:has-text("Nueva cuenta")');
+  await page.fill('#ca-name', 'Juan Pérez'); await page.fill('#ca-phone', '549 388 1234567'); await page.fill('#ca-limit', '20000');
+  await page.click('dialog button:has-text("Guardar")'); await page.waitForSelector('.promo-row');
+  const acc = w.t.credit_accounts[0];
+  ok('cuentas: se crea con código de 4 números', /^\d{4}$/.test(acc.code) && acc.credit_limit === 20000, acc.code);
+  ok('cuentas: la lista muestra el código', (await page.textContent('.promo-row')).includes(`Código ${acc.code}`));
+  await page.click('.promo-row button:has-text("Abrir")'); await page.waitForSelector('text=Movimientos');
+  await page.click('button:has-text("Cargar consumo")'); await page.fill('#ce-amount', '15000'); await page.fill('#ce-desc', 'Cena del viernes');
+  await page.click('dialog button:has-text("Cargar consumo")'); await page.waitForSelector('.big-balance strong');
+  ok('cuentas: consumo manual suma al saldo', (await page.textContent('.big-balance')).includes('15.000'));
+  await page.click('button:has-text("Registrar pago")'); await page.fill('#ce-amount', '5000'); await page.selectOption('#ce-method', 'transferencia');
+  await page.click('dialog button:has-text("Registrar pago")'); await page.waitForFunction(() => document.querySelector('.big-balance')?.textContent.includes('10.000'));
+  ok('cuentas: el pago baja el saldo', true);
+  await page.click('button:has-text("Cargar consumo")'); await page.fill('#ce-amount', '12000'); await page.fill('#ce-desc', 'Almuerzo');
+  await page.click('dialog button:has-text("Cargar consumo")'); await page.waitForSelector('.form-error:has-text("superó su límite")');
+  ok('cuentas: avisa cuando pasa el límite (y guarda igual)', w.t.credit_entries.length === 3);
+  await page.screenshot({ path: '/tmp/e2e-cuenta-detalle.png', fullPage: true });
+  await page.click('button:has-text("Resumen del mes")'); await page.waitForSelector('.stmt');
+  ok('resumen: muestra consumos, pagos y saldo a pagar', /Saldo a pagar[\s\S]*22\.000/.test(await page.textContent('.stmt')));
+  const href = await page.getAttribute('dialog a:has-text("WhatsApp")', 'href');
+  ok('resumen: enlace de WhatsApp con el detalle', href.startsWith('https://wa.me/5493881234567?text=') && decodeURIComponent(href).includes('Saldo a pagar'));
+  await page.screenshot({ path: '/tmp/e2e-cuenta-resumen.png' });
+  await page.click('dialog button:has-text("Cerrar")');
+  // anular un movimiento
+  await page.click('.ce-list li:has-text("Almuerzo") button:has-text("Anular")'); await page.click('dialog button:has-text("Anular")');
+  await page.waitForFunction(() => document.querySelector('.big-balance')?.textContent.includes('10.000'));
+  ok('cuentas: anular devuelve el saldo y deja rastro', await page.locator('.ce-list li.off').count() === 1);
+
+  // el local ofrece "cuenta corriente" como medio de pago
+  await page.click('.tab[data-k=pagos]'); await page.waitForSelector('#pm-cuenta_corriente');
+  await page.check('#pm-cuenta_corriente'); await page.click('text=Guardar métodos de pago'); await page.waitForSelector('.toast >> text=Métodos de pago guardados');
+  ok('pagos: se habilita cuenta corriente', w.t.restaurant_payment_settings.some((x) => x.methods.includes('cuenta_corriente')));
+
+  // el cliente pide con su código
+  const cli = await newPage(); await cli.goto(`${base}/res-prem`); await cli.waitForSelector('.menu');
+  await cli.locator('#m-cat-0 .m-add').first().click(); await cli.click('.m-bar .m-btn'); await cli.waitForSelector('dialog.m-cart[open] form');
+  await cli.selectOption('#o-type', 'take_away'); await cli.fill('#o-name', 'Juan'); await cli.fill('#o-phone', '549 388 1234567');
+  ok('pedido: el campo de código está oculto hasta elegir cuenta corriente', await cli.locator('#o-credit').isHidden());
+  await cli.selectOption('#o-pay', 'cuenta_corriente'); await cli.waitForSelector('#o-credit', { state: 'visible' });
+  await cli.fill('#o-credit', '12'); await cli.click('text=Confirmar pedido');
+  await cli.waitForSelector('[data-f=credit_code] .m-field-err:not(.hidden)');
+  ok('pedido: código incompleto → error en el campo', true);
+  await cli.fill('#o-credit', acc.code === '0000' ? '1111' : '0000'); await cli.click('text=Confirmar pedido');
+  await cli.waitForFunction(() => /no es válido/.test(document.querySelector('[data-f=credit_code] .m-field-err')?.textContent || ''));
+  ok('pedido: código que no existe → error sin datos del cliente', !/Juan|Pérez/.test(await cli.textContent('dialog.m-cart')));
+  await cli.screenshot({ path: '/tmp/e2e-pedido-cuenta.png' });
+  await cli.fill('#o-credit', acc.code); await cli.click('text=Confirmar pedido'); await cli.waitForSelector('.m-order-num');
+  ok('pedido: con el código correcto se confirma', true);
+  ok('pedido: no se cargó nada hasta que el dueño acepte', w.t.credit_entries.filter((e) => e.order_id).length === 0);
+  ok('pedido: el cliente no ve la cuenta', !/Juan Pérez|cuenta corriente|saldo/i.test(await cli.textContent('dialog.m-cart')));
+
+  // el dueño lo ve, con la cuenta y el saldo
+  await page.click('.tab[data-k=pedidos]'); await page.click('.sub .tab:has-text("Cola")');
+  await page.waitForSelector('.o-credit', { timeout: 20000 });
+  const txt = await page.textContent('.o-credit');
+  ok('cola: muestra la cuenta, el saldo y la advertencia', txt.includes('Cuenta corriente') && txt.includes('Saldo actual') && txt.includes('límite'), txt);
+  ok('cola: se puede elegir/cambiar la cuenta mientras está nuevo', await page.locator('.o-credit select').count() === 1 && (await page.locator('.o-credit select').inputValue()) === acc.id);
+  await page.screenshot({ path: '/tmp/e2e-cola-cuenta.png', fullPage: true });
+  await page.click('text=Aceptar y preparar'); await page.waitForSelector('.order.st-en_preparacion');
+  ok('aceptar: se cargó el pedido a la cuenta', w.t.credit_entries.some((e) => e.order_id && e.kind === 'consumo' && e.amount === 9500));
+  await page.click('.tab[data-k=cuentas]'); await page.waitForSelector('.promo-row');
+  ok('cuentas: el saldo incluye el pedido', (await page.textContent('.promo-row')).includes('19.500'));
+  await page.click('.promo-row button:has-text("Abrir")'); await page.waitForSelector('.ce-list');
+  ok('cuentas: el movimiento del pedido está marcado', await page.locator('.ce-list .tag-star:has-text("Pedido")').count() === 1);
+}
+
+// ---- Editor de fotos + portada como fondo del encabezado + admin ----
+{
+  const { execFileSync } = await import('node:child_process');
+  const dir = '/tmp/e2e-img'; fs.mkdirSync(dir, { recursive: true });
+  execFileSync('python3', ['-I', '-c', `
+from PIL import Image, ImageDraw
+im = Image.new('RGB', (1600, 900), (200, 60, 40)); d = ImageDraw.Draw(im)
+d.rectangle([800, 0, 1600, 900], fill=(40, 90, 200)); d.ellipse([650, 300, 950, 600], fill=(250, 220, 40))
+im.save('${dir}/ancha.jpg', quality=95)
+Image.new('RGBA', (300, 200), (10, 160, 80, 255)).save('${dir}/chica.png')
+`]);
+  const dims = (buf) => JSON.parse(execFileSync('python3', ['-I', '-c', 'import sys,io,json;from PIL import Image;i=Image.open(io.BytesIO(sys.stdin.buffer.read()));print(json.dumps([i.width,i.height,i.format]))'], { input: buf }).toString());
+  const page = await newPage(); await login(page, 'pro@x.com');
+  // logo: recorte circular, salida cuadrada
+  const n0 = w.uploads.length;
+  await page.setInputFiles('input[aria-label="Elegir logotipo"]', `${dir}/ancha.jpg`);
+  await page.waitForSelector('dialog.crop-dlg[open] canvas');
+  await page.screenshot({ path: '/tmp/e2e-recorte-logo.png' });
+  const c = page.locator('dialog.crop-dlg canvas'); const bb = await c.boundingBox();
+  await page.fill('.crop-zoom', '2'); await page.dispatchEvent('.crop-zoom', 'input');
+  await page.mouse.move(bb.x + bb.width / 2, bb.y + bb.height / 2); await page.mouse.down();
+  await page.mouse.move(bb.x + bb.width / 2 + 80, bb.y + bb.height / 2, { steps: 5 }); await page.mouse.up();
+  await page.click('text=Usar esta foto'); await page.waitForSelector('dialog.crop-dlg', { state: 'detached' });
+  await page.waitForTimeout(500);
+  const up = w.uploads.slice(n0);
+  ok('logo: se subió una imagen recortada', up.length === 1, String(up.length));
+  const [lw, lh, lf] = dims(up[0].bytes);
+  ok('logo: cuadrada 600×600 JPEG', lw === 600 && lh === 600 && lf === 'JPEG', `${lw}x${lh} ${lf}`);
+  // cancelar no sube nada
+  await page.setInputFiles('input[aria-label="Elegir logotipo"]', `${dir}/ancha.jpg`);
+  await page.waitForSelector('dialog.crop-dlg[open]'); await page.click('dialog.crop-dlg >> text=Cancelar');
+  await page.waitForTimeout(300);
+  ok('cancelar el recorte no sube nada', w.uploads.length === n0 + 1);
+  // plato
+  await page.click('.cat >> text=/Agregar|Nuevo/'); await page.fill('#f-name', 'Con foto'); await page.fill('#f-price', '100'); await page.fill('#f-desc', 'Con queso');
+  await page.setInputFiles('dialog.wide input[type=file]', `${dir}/ancha.jpg`);
+  await page.waitForSelector('dialog.crop-dlg[open]');
+  await page.keyboard.press('ArrowLeft');
+  await page.click('text=Usar esta foto'); await page.waitForSelector('dialog.crop-dlg', { state: 'detached' });
+  ok('plato: vista previa con la foto recortada', await page.locator('dialog.wide .img-prev img').count() === 1);
+  await page.click('dialog.wide button:has-text("Crear producto")'); await page.waitForSelector('text=Con foto'); await page.waitForTimeout(400);
+  const [pw, ph] = dims(w.uploads.at(-1).bytes);
+  ok('plato: 900×900', pw === 900 && ph === 900, `${pw}x${ph}`);
+  // portada 2:1
+  await page.click('.tab:has-text("Diseño")'); await page.waitForSelector('.design-prev .menu');
+  await page.setInputFiles('input[aria-label="Elegir portada"]', `${dir}/ancha.jpg`);
+  await page.waitForSelector('dialog.crop-dlg[open]'); await page.screenshot({ path: '/tmp/e2e-recorte-portada.png' });
+  await page.click('text=Usar esta foto'); await page.waitForSelector('dialog.crop-dlg', { state: 'detached' });
+  await page.waitForSelector('.design-prev .m-hero');
+  const [cw, ch] = dims(w.uploads.at(-1).bytes);
+  ok('portada: 1280×640', cw === 1280 && ch === 640, `${cw}x${ch}`);
+  const geo = await page.evaluate(() => {
+    const q = (s) => document.querySelector(`.design-prev ${s}`).getBoundingClientRect();
+    return { hero: q('.m-hero'), cover: q('.m-cover'), logo: q('.m-logo'), h1: q('.m-hero h1') };
+  });
+  const inside = (a, b) => a.left >= b.left - 1 && a.right <= b.right + 1 && a.top >= b.top - 1 && a.bottom <= b.bottom + 1;
+  ok('portada: ocupa todo el encabezado', inside(geo.cover, geo.hero) && geo.cover.height >= geo.hero.height - 2);
+  ok('portada: logo y nombre quedan DENTRO (encima de la portada)', inside(geo.logo, geo.cover) && inside(geo.h1, geo.cover));
+  await page.locator('.design-prev .m-hero').scrollIntoViewIfNeeded(); await page.screenshot({ path: '/tmp/e2e-portada-hero.png' });
+
+  // producto sin precio: no disponible y en $0 → "Agotado" + "Consultar"
+  await page.click('.tab:has-text("Menú")');
+  await page.click('.cat >> text=/Agregar|Nuevo/'); await page.fill('#f-name', 'Sin precio'); await page.fill('#f-price', '0'); await page.uncheck('#f-av');
+  await page.click('dialog button:has-text("Crear producto")'); await page.waitForSelector('text=Sin precio'); await page.waitForTimeout(300);
+  await page.click('text=Vista previa'); await page.waitForSelector('dialog .preview-frame .menu');
+  const sp = await page.evaluate(() => { const li = [...document.querySelectorAll('dialog .preview-frame .m-item')].find((x) => x.textContent.includes('Sin precio')); return li && { tag: li.querySelector('.m-tag')?.textContent, price: li.querySelector('.m-price')?.textContent, add: li.querySelectorAll('.m-add').length }; });
+  ok('sin precio: "Agotado" y "Consultar" juntos, sin botón de agregar', sp && sp.tag === 'Agotado' && sp.price === 'Consultar' && sp.add === 0, JSON.stringify(sp));
+  const okp = await page.evaluate(() => [...document.querySelectorAll('dialog .preview-frame .m-item')].filter((x) => !x.textContent.includes('Sin precio')).every((x) => /\$/.test(x.querySelector('.m-price').textContent)));
+  ok('los productos con precio siguen mostrando su precio', okp);
+  await page.screenshot({ path: '/tmp/e2e-consultar.png' });
+  await page.keyboard.press('Escape');
+  // colores extra del diseño
+  await page.click('.tab:has-text("Menú")'); await page.fill('#b-desc', 'Pizzas y más'); await page.click('text=Guardar datos'); await page.waitForTimeout(400);
+  await page.click('.tab:has-text("Diseño")'); await page.waitForSelector('.design-prev .menu');
+  const setColor = (id, v) => page.evaluate(([i, val]) => { const e = document.getElementById(i); e.value = val; e.dispatchEvent(new Event('change', { bubbles: true })); }, [id, v]);
+  await setColor('c-name_color', '#ffd700'); await setColor('c-promo_bg', '#112244'); await setColor('c-cat_text', '#222222');
+  await setColor('c-price_color', '#b00020'); await setColor('c-item_bg', '#cc6600');
+  await page.fill('#c-item_opacity', '30'); await page.dispatchEvent('#c-item_opacity', 'input');
+  const cs = await page.evaluate(() => {
+    const g = (s, p) => getComputedStyle(document.querySelector(`.design-prev ${s}`))[p];
+    return { h1: g('.m-hero h1', 'color'), desc: g('.m-hero .m-desc', 'color'), promo: g('.m-promo', 'backgroundColor'), promoTxt: g('.m-promo', 'color'),
+      cat: g('.m-cat h2', 'color'), dish: g('.m-body h3', 'color'), dishDesc: g('.m-body p', 'color'),
+      line: g('.m-cat h2', 'borderBottomColor'), price: g('.m-price', 'color'), bubble: g('#m-cat-0 .m-item', 'backgroundColor') };
+  });
+  ok('colores: nombre y descripción', cs.h1 === 'rgb(255, 215, 0)' && cs.desc === 'rgb(255, 215, 0)', JSON.stringify(cs));
+  ok('colores: burbuja de promo y texto automático legible', cs.promo === 'rgb(17, 34, 68)' && cs.promoTxt === 'rgb(255, 255, 255)', JSON.stringify(cs));
+  ok('colores: categorías, nombre y descripción del plato iguales', cs.cat === 'rgb(34, 34, 34)' && cs.dish === cs.cat && cs.dishDesc === cs.cat, JSON.stringify(cs));
+  ok('colores: línea y precio iguales', cs.line === 'rgb(176, 0, 32)' && cs.price === cs.line, JSON.stringify(cs));
+  ok('colores: burbuja del plato semitransparente', /^rgba?\(.*0\.3\)$|color\(srgb/.test(cs.bubble), cs.bubble);
+  await page.locator('.design-prev').scrollIntoViewIfNeeded(); await page.screenshot({ path: '/tmp/e2e-colores.png' });
+  await page.click('text=Guardar diseño'); await page.waitForTimeout(500);
+  ok('colores: se guardan en el servidor', w.t.menu_settings.some((x) => x.design?.item_bg === '#cc6600' && x.design?.item_opacity === 30));
+  // ilegible → bloquea guardar
+  await setColor('c-cat_text', '#eeeeee'); await page.waitForTimeout(100);
+  ok('colores: ilegible bloquea el guardado', await page.locator('button:has-text("Guardar diseño")').isDisabled() && (await page.textContent('.form-error')).includes('no se lee'));
+  await setColor('c-cat_text', '#222222');
+  // público tras publicar
+  await page.click('.tab:has-text("Menú")'); await page.click('text=Publicar cambios'); await page.waitForSelector('text=Tu menú está al día');
+  const pub = await newPage(); await pub.goto(`${base}/res-pro`); await pub.waitForSelector('.m-hero .m-cover');
+  ok('público: portada detrás del logo', await pub.locator('.m-hero .m-head-in .m-logo').count() === 1);
+  await pub.screenshot({ path: '/tmp/e2e-publico-hero.png' });
+}
+
+// ---- Modelos 3D (Premium) ----
+{
+  const page = await newPage();
+  // Visor de PRUEBA: el real (model-viewer de Google) no se puede bajar en este entorno.
+  const STUB = "class MV extends HTMLElement{connectedCallback(){setTimeout(()=>this.dispatchEvent(new Event('load')),30)}} customElements.define('model-viewer',MV);";
+  await page.route('**/vendor/model-viewer.min.js', (r) => r.fulfill({ status: 200, contentType: 'text/javascript', body: STUB }));
+  await login(page, 'prem@x.com');
+  await page.click('text=Nueva categoría'); await page.fill('#dlg-in', 'Pizzas'); await page.click('dialog button:has-text("Crear")'); await page.waitForSelector('.cat');
+  await page.click('.cat >> text=/Agregar|Nuevo/'); await page.fill('#f-name', 'Pizza AR'); await page.fill('#f-price', '9000');
+  ok('panel Premium: aviso de modelo 3D (solo lectura)', (await page.textContent('dialog.wide .model-box')).includes('no tiene modelo 3D'));
+  ok('panel Premium: el dueño NO tiene botón ni campo para subir modelos',
+    await page.locator('input[aria-label="Elegir modelo 3D"]').count() === 0 && await page.locator('dialog.wide >> text=Elegir archivo .glb').count() === 0
+    && await page.locator('dialog.wide input[type=file]').count() === 1 /* solo la foto */);
+  await page.click('dialog.wide button:has-text("Crear producto")'); await page.waitForSelector('text=Pizza AR'); await page.waitForTimeout(300);
+  ok('panel: sin modelo todavía', !w.t.products.some((x) => x.model_path));
+  // ---- el ADMINISTRADOR carga el modelo desde su panel ----
+  const adm = await newPage();
+  await adm.goto(`${base}/admin/`);
+  await adm.fill('#e', 'adm@x.com'); await adm.fill('#p', 'x'); await adm.click('button[type=submit]');
+  await adm.waitForSelector('.ritem');
+  await adm.click('.ritem:has-text("/res-prem")');
+  await adm.click('button:has-text("Administrar modelos 3D")'); await adm.waitForSelector('dialog[open] table');
+  ok('admin: lista los platillos del restaurante', (await adm.textContent('dialog[open] table')).includes('Pizza AR'));
+  await adm.setInputFiles('input[aria-label="Modelo de Pizza AR"]', { name: 'foto.jpg', mimeType: 'image/jpeg', buffer: Buffer.from([1, 2, 3]) });
+  await adm.waitForTimeout(200);
+  ok('admin: rechaza en pantalla un archivo que no es .glb', !w.t.products.some((x) => x.model_path));
+  await adm.setInputFiles('input[aria-label="Modelo de Pizza AR"]', { name: 'pizza.glb', mimeType: 'model/gltf-binary', buffer: Buffer.from(makeGlb()) });
+  await adm.waitForFunction(() => document.querySelector('dialog[open] table')?.textContent.includes('Con modelo'));
+  ok('admin: el modelo se subió y la fila muestra "Con modelo"', w.t.products.some((x) => x.name === 'Pizza AR' && /\.glb$/.test(x.model_path || '')));
+  await adm.fill('#mlimit', '3'); await adm.click('dialog[open] button:has-text("Guardar")');
+  await adm.waitForFunction(() => document.querySelector('dialog[open]')?.textContent.includes("de 3 modelos"));
+  ok('admin: cambia el límite de modelos del restaurante', true);
+  await adm.screenshot({ path: '/tmp/e2e-admin-modelos.png' });
+  // ---- el dueño recarga: lo ve, solo lectura ----
+  await page.reload(); await page.waitForSelector('.tabs');
+  ok('panel: etiqueta "AR 3D" en la lista', await page.locator('.prow .tag-ar').count() === 1);
+  await page.click('.prow button:has-text("Editar")');
+  ok('panel: el dueño ve que el platillo tiene modelo, sin poder quitarlo', (await page.textContent('dialog.wide .model-box')).includes('tiene modelo 3D') && await page.locator('dialog.wide >> text=Quitar modelo').count() === 0);
+  await page.click('dialog.wide button:has-text("Cancelar")');
+  await page.click('text=Publicar cambios'); await page.waitForSelector('text=Tu menú está al día');
+  // público
+  const pub = await newPage();
+  await pub.route('**/vendor/model-viewer.min.js', (r) => r.fulfill({ status: 200, contentType: 'text/javascript', body: STUB }));
+  await pub.goto(`${base}/res-prem`); await pub.waitForSelector('.m-item');
+  ok('público: botón "Ver" en el platillo con modelo', await pub.locator('.m-item .m-ver').count() === 1);
+  ok('público: el visor NO se descarga hasta tocar "Ver"', !(await pub.evaluate(() => !!customElements.get('model-viewer'))));
+  await pub.click('.m-ver'); await pub.waitForSelector('dialog.m-ar[open] model-viewer');
+  const mv = await pub.evaluate(() => { const e = document.querySelector('dialog.m-ar model-viewer'); return { src: e.getAttribute('src'), ar: e.hasAttribute('ar'), modes: e.getAttribute('ar-modes'), scale: e.getAttribute('ar-scale'), btn: e.querySelector('[slot=ar-button]')?.textContent }; });
+  ok('público: el visor recibe el modelo, AR y tamaño fijo (real)', /\.glb$/.test(mv.src) && mv.ar && mv.modes === 'scene-viewer quick-look' && mv.scale === 'fixed' && mv.btn === 'Ver en mi mesa', JSON.stringify(mv));
+  await pub.waitForFunction(() => !document.querySelector('.m-ar-status'));
+  ok('público: se oculta "Cargando" cuando el modelo carga', true);
+  await pub.screenshot({ path: '/tmp/e2e-ar-visor.png' });
+  await pub.click('dialog.m-ar button:has-text("Cerrar")');
+  ok('público: se puede cerrar el visor', await pub.locator('dialog.m-ar[open]').count() === 0);
+  // sin el archivo del visor en el sitio → mensaje claro, sin romper el menú
+  const pub2 = await newPage(); await pub2.goto(`${base}/res-prem`); await pub2.waitForSelector('.m-item');
+  await pub2.click('.m-ver'); await pub2.waitForSelector('.m-ar-status');
+  await pub2.waitForFunction(() => document.querySelector('.m-ar-status')?.textContent.includes('No se pudo cargar el visor'));
+  ok('sin visor instalado: mensaje claro y el menú sigue andando', await pub2.locator('.m-item').count() >= 1 && await pub2.locator('dialog.m-ar[open]').count() === 1, String(await pub2.locator('.m-item').count()));
+  // El error de consola de arriba es ESPERADO (el visor no está instalado a propósito en esa prueba).
+  for (let i = problems.length - 1; i >= 0; i--) if (/Failed to load module script/.test(problems[i])) problems.splice(i, 1);
+  // Profesional: sin campo de modelo
+  const pro = await newPage(); await login(pro, 'pro@x.com');
+  await pro.click('.cat >> text=/Agregar|Nuevo/');
+  ok('panel Profesional: sin campo de modelo y con aviso de plan', await pro.locator('dialog.wide .model-box').count() === 0 && (await pro.textContent('dialog.wide')).includes('plan Premium'));
+}
+await browser.close(); server.close();
+for (const [c, n, e] of results) console.log(c ? 'OK  ' : 'FALLA', n, c ? '' : e);
+console.log('problemas de consola/CSP:', problems.length ? problems : 'ninguno');
