@@ -1,7 +1,7 @@
 // Métodos de pago del local (todos los planes). Configuración en vivo.
 import { HttpError, readJson, json } from '../lib/http.js';
 import { requireOwner } from '../lib/auth.js';
-import { requireFeature } from '../lib/plans.js';
+import { requireFeature, hasFeature } from '../lib/plans.js';
 import { validatePaymentSettings, DEFAULT_PAYMENTS } from '../lib/payments.js';
 
 async function ctx(request, db) {
@@ -21,6 +21,7 @@ export async function updatePayments({ request, db }) {
   const { restaurant: r } = await ctx(request, db);
   const v = validatePaymentSettings(await readJson(request));
   if (!v.ok) throw new HttpError(400, 'Revisá los datos.', v.errors);
+  if (v.value.methods.includes('cuenta_corriente') && !hasFeature(r.plan, 'cuentas_corrientes')) requireFeature(r, 'cuentas_corrientes');
   const [row] = await db.rest('restaurant_payment_settings', { query: { select: 'restaurant_id', restaurant_id: `eq.${r.id}` } });
   if (row) await db.rest('restaurant_payment_settings', { method: 'PATCH', query: { restaurant_id: `eq.${r.id}` }, body: v.value });
   else await db.rest('restaurant_payment_settings', { method: 'POST', body: { restaurant_id: r.id, ...v.value } });

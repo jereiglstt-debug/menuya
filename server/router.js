@@ -7,6 +7,7 @@ import { publicMenu } from './handlers/publicMenu.js';
 import * as pubOrders from './handlers/publicOrders.js';
 import * as ord from './handlers/orders.js';
 import * as pay from './handlers/payments.js';
+import * as credit from './handlers/credit.js';
 
 const ROUTES = [
   ['GET',   /^\/config$/,                          pub.config, false],
@@ -39,6 +40,14 @@ const ROUTES = [
   ['GET',    /^\/owner\/orders$/,                    ord.listOrders],
   ['PATCH',  /^\/owner\/orders\/([^/]+)\/status$/,   ord.setOrderStatus],
   ['GET',    /^\/owner\/stats$/,                     ord.stats],
+  ['GET',    /^\/owner\/credit$/,                    credit.listAccounts],
+  ['POST',   /^\/owner\/credit\/accounts$/,           credit.createAccount],
+  ['GET',    /^\/owner\/credit\/accounts\/([^/]+)$/,  credit.getAccountDetail],
+  ['PATCH',  /^\/owner\/credit\/accounts\/([^/]+)$/,  credit.updateAccount],
+  ['DELETE', /^\/owner\/credit\/accounts\/([^/]+)$/,  credit.deleteAccount],
+  ['POST',   /^\/owner\/credit\/accounts\/([^/]+)\/entries$/, credit.createEntry],
+  ['POST',   /^\/owner\/credit\/entries\/([^/]+)\/void$/, credit.voidEntry],
+  ['PATCH',  /^\/owner\/orders\/([^/]+)\/credit$/,   credit.setOrderAccount],
 
   ['GET',    /^\/owner\/menu$/,                      owner.getMenu],
   ['GET',    /^\/owner\/preview$/,                   owner.preview],
@@ -63,8 +72,6 @@ const ROUTES = [
   ['POST',   /^\/owner\/products\/([^/]+)\/duplicate$/, owner.duplicateProduct],
   ['POST',   /^\/owner\/products\/([^/]+)\/image$/, owner.uploadProductImage],
   ['DELETE', /^\/owner\/products\/([^/]+)\/image$/, owner.deleteProductImage],
-  ['POST',   /^\/owner\/products\/([^/]+)\/model$/, owner.uploadProductModel],
-  ['DELETE', /^\/owner\/products\/([^/]+)\/model$/, owner.deleteProductModel],
 ];
 
 export async function handle(request, env, fetchImpl = fetch) {

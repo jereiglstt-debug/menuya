@@ -4,10 +4,11 @@
 import { h } from '/shared/core.js';
 import { PAY_LABEL, BASE } from '/shared/pagos.js';
 
-const OPTIONS = ['efectivo', 'debito', 'credito', 'combinado'];
+const BASE_OPTIONS = ['efectivo', 'debito', 'credito', 'combinado'];
 
 export function pagosTab({ S, api, act }) {
   const premium = S.capabilities.features.includes('pedidos_nativos');
+  const OPTIONS = S.capabilities.features.includes('cuentas_corrientes') ? [...BASE_OPTIONS, 'cuenta_corriente'] : BASE_OPTIONS;
   const box = h('section', { class: 'card' }, h('p', { class: 'empty' }, 'Cargando…'));
   const root = h('div', {}, box);
   api('/owner/payments').then(({ payments, configured }) => {
@@ -21,7 +22,7 @@ export function pagosTab({ S, api, act }) {
     const main = OPTIONS.map((m) => {
       const i = h('input', { type: 'checkbox', id: `pm-${m}`, checked: on.has(m), onchange: () => { i.checked ? on.add(m) : on.delete(m); paintCombo(); } });
       checks[m] = i;
-      return h('label', { class: 'check', for: `pm-${m}` }, i, PAY_LABEL[m]);
+      return h('label', { class: 'check', for: `pm-${m}` }, i, PAY_LABEL[m], m === 'cuenta_corriente' && h('span', { class: 'pmeta ml' }, ' · el cliente ingresa su código de 4 números y vos confirmás al aceptar el pedido'));
     });
     comboBox.replaceChildren(h('legend', {}, '¿Qué medios se pueden combinar?'),
       h('p', { class: 'hint' }, 'Elegí al menos dos. Si el cliente elige “Combinado”, va a decidir cuáles de estos usa.'),

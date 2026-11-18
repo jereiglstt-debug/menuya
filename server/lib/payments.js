@@ -1,8 +1,8 @@
 // Métodos de pago que acepta un local. Solo informan y registran la elección
 // del cliente: la plataforma no cobra online.
 export const BASE_METHODS = ['efectivo', 'debito', 'credito'];
-export const METHODS = [...BASE_METHODS, 'combinado'];
-export const METHOD_LABELS = { efectivo: 'Efectivo', debito: 'Tarjeta de débito', credito: 'Tarjeta de crédito', combinado: 'Combinado' };
+export const METHODS = [...BASE_METHODS, 'combinado', 'cuenta_corriente'];
+export const METHOD_LABELS = { efectivo: 'Efectivo', debito: 'Tarjeta de débito', credito: 'Tarjeta de crédito', combinado: 'Combinado', cuenta_corriente: 'Cuenta corriente' };
 export const DEFAULT_PAYMENTS = { methods: ['efectivo'], combo_options: [] };
 
 const uniqueSubset = (v, allowed) => Array.isArray(v) && new Set(v).size === v.length && v.every((x) => allowed.includes(x));

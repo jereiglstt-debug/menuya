@@ -117,11 +117,12 @@ export async function deleteTable({ request, db, params }) {
 }
 
 // ---------------- pedidos ----------------
-const orderOut = (o, items, history) => ({
+const orderOut = (o, items, history, accounts = new Map()) => ({
   id: o.id, number: o.number, type: o.type, status: o.status, table_label: o.table_label,
   customer_name: o.customer_name, customer_phone: o.customer_phone, address: o.address, note: o.note,
   payment_method: o.payment_method, payment_combo: o.payment_combo ?? null, subtotal: Number(o.subtotal), delivery_fee: Number(o.delivery_fee), total: Number(o.total),
   created_at: o.created_at,
+  credit_account: o.credit_account_id ? { id: o.credit_account_id, name: accounts.get(o.credit_account_id) ?? '' } : null,
   items: items.filter((i) => i.order_id === o.id).map((i) => ({ name: i.name, unit_price: Number(i.unit_price), qty: i.qty })),
   history: history.filter((h) => h.order_id === o.id).map((h) => ({ status: h.status, at: h.created_at })),
 });
@@ -142,7 +143,10 @@ export async function listOrders({ request, db }) {
       db.rest('order_status_history', { query: { select: 'order_id,status,created_at', restaurant_id: `eq.${r.id}`, order_id: inList, order: 'id.asc' } }),
     ]);
   }
-  return json({ orders: rows.map((o) => orderOut(o, items, history)) }, 200, { 'cache-control': 'no-store' });
+  const accIds = [...new Set(rows.map((o) => o.credit_account_id).filter(Boolean))];
+  const accounts = new Map();
+  if (accIds.length) (await db.rest('credit_accounts', { query: { select: 'id,name', restaurant_id: `eq.${r.id}`, id: `in.(${accIds.join(',')})` } })).forEach((a) => accounts.set(a.id, a.name));
+  return json({ orders: rows.map((o) => orderOut(o, items, history, accounts)) }, 200, { 'cache-control': 'no-store' });
 }
 
 export async function setOrderStatus({ request, db, params }) {

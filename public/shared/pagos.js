@@ -1,6 +1,6 @@
 // Etiquetas de medios de pago (iguales en el panel y en el menú).
 export const PAY_LABEL = {
-  efectivo: 'Efectivo', debito: 'Tarjeta de débito', credito: 'Tarjeta de crédito', combinado: 'Combinado',
+  efectivo: 'Efectivo', debito: 'Tarjeta de débito', credito: 'Tarjeta de crédito', combinado: 'Combinado', cuenta_corriente: 'Cuenta corriente',
   transferencia: 'Transferencia', tarjeta: 'Tarjeta', // solo pedidos viejos
 };
 export const BASE = ['efectivo', 'debito', 'credito'];

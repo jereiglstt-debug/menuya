@@ -53,11 +53,19 @@ export async function createOrder({ request, db, params }) {
   const same = pending.filter((o) => (v.value.customer_phone && o.customer_phone === v.value.customer_phone) || (v.value.table_id && o.table_id === v.value.table_id)).length;
   if (same >= LIMITS.pendingPerContact) throw new HttpError(429, 'Ya tenés pedidos esperando respuesta del local. Esperá a que los atiendan.');
 
+  // Cuenta corriente: el código identifica la cuenta. Nunca se devuelve el nombre ni el saldo.
+  let creditId = null;
+  if (v.value.payment_method === 'cuenta_corriente') {
+    const [acc] = await db.rest('credit_accounts', { query: { select: 'id', restaurant_id: `eq.${r.id}`, code: `eq.${v.value.credit_code}`, active: 'eq.true' } });
+    if (!acc) throw new HttpError(400, 'Revisá los datos del pedido.', { credit_code: 'Ese código de cuenta corriente no es válido. Pedíselo al local.' });
+    creditId = acc.id;
+  }
+
   const token = newToken();
   const created = await db.rpc('create_order', {
     p_restaurant: r.id, p_type: v.value.type, p_table: v.value.table_id ?? null,
     p_name: v.value.customer_name, p_phone: v.value.customer_phone, p_address: v.value.address,
-    p_note: v.value.note, p_payment: v.value.payment_method, p_combo: v.value.payment_combo, p_fee: view.fee, p_items: priced.items, p_token: token,
+    p_note: v.value.note, p_payment: v.value.payment_method, p_combo: v.value.payment_combo, p_credit: creditId, p_fee: view.fee, p_items: priced.items, p_token: token,
   });
   const total = subtotal + (v.value.type === 'delivery' ? view.fee : 0);
   return json({ order: { number: created.number, tracking_token: token, total, status: 'nuevo' } }, 201, { 'cache-control': 'no-store' });

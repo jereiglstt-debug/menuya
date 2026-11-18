@@ -3,7 +3,7 @@
 // "no existe" para quien lo pide (404), nunca se lee ni se modifica.
 import { HttpError, readJson, json } from '../lib/http.js';
 import { requireOwner } from '../lib/auth.js';
-import { requireFeature, designPermissions, featuresFor, hasFeature } from '../lib/plans.js';
+import { requireFeature, designPermissions, featuresFor } from '../lib/plans.js';
 import { validateDesign, sanitizeDesign } from '../../public/shared/design.js';
 import { publicShape } from '../lib/publicShape.js';
 import { orderingView } from '../lib/orders.js';
@@ -11,7 +11,6 @@ import { paymentsView } from '../lib/payments.js';
 
 const MAX_PROMOS = 10;
 import { readImage, newImagePath } from '../lib/images.js';
-import { attachModel, detachModel, modelStatus } from '../lib/modelOps.js';
 import {
   isUuid, validateCategoryInput, validateProductInput, validateSettingsInput, validateIdList, validatePromotionInput,
 } from '../lib/validate.js';
@@ -67,7 +66,6 @@ export async function getMenu({ request, db }) {
     design: sanitizeDesign(settings.design, designPermissions(r.plan)),
     cover_url: hasCover(r) ? db.publicUrl(settings.cover_path) : null,
     capabilities: { design: designPermissions(r.plan), features: featuresFor(r.plan) },
-    models: hasFeature(r.plan, 'modelos_3d') ? await modelStatus(db, r.id) : null,
     categories: cats.map((c) => ({ ...c, products: prods.filter((p) => p.category_id === c.id).map((p) => withUrl(db, p)) })),
     status: { version: last?.version ?? null, last_published_at: last?.published_at ?? null, unpublished_changes: unpublished },
   });
@@ -204,20 +202,7 @@ export async function deleteProductImage({ request, db, params }) {
   return json({ ok: true });
 }
 
-// ---------------- modelos 3D (plan Premium) ----------------
-export async function uploadProductModel({ request, db, params }) {
-  const { restaurant: r } = await ctx(request, db);
-  const p = await getProduct(db, r.id, params.id);
-  const row = await attachModel({ db, restaurant: r, product: p, request });
-  return json({ product: withUrl(db, row) });
-}
-
-export async function deleteProductModel({ request, db, params }) {
-  const { restaurant: r } = await ctx(request, db);
-  const p = await getProduct(db, r.id, params.id);
-  await detachModel({ db, restaurant: r, product: p });
-  return json({ ok: true });
-}
+// Los modelos 3D los carga SOLO el administrador (ver handlers/admin.js). El dueño únicamente los ve.
 
 export async function uploadLogo({ request, db }) {
   const { restaurant: r } = await ctx(request, db);

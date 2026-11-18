@@ -53,7 +53,8 @@ export function pedidosTab({ S, api, confirmDlg, inputDlg }) {
   const body = h('div', {});
   const stateBar = h('div', { class: 'card state-bar' });
   const root = h('div', {}, stateBar, h('div', { class: 'tabs sub', role: 'tablist' }, SUBS.map(([k, l]) => h('button', { role: 'tab', class: `tab${SUB === k ? ' on' : ''}`, 'aria-selected': String(SUB === k), onclick: () => { SUB = k; show(); root.querySelectorAll('.sub .tab').forEach((b, i) => { const on = SUBS[i][0] === k; b.classList.toggle('on', on); b.setAttribute('aria-selected', String(on)); }); } }, l))), body);
-  let ordering = null; let tables = [];
+  let ordering = null; let tables = []; let accounts = [];
+  api('/owner/credit').then((r) => { accounts = r.accounts; if (SUB === 'cola') paintCola(live.orders); }).catch(() => {});
   let unlisten = null;
   const fail = (e) => { if (e.message !== 'sesión') toast(e.message); };
 
@@ -76,10 +77,24 @@ export function pedidosTab({ S, api, confirmDlg, inputDlg }) {
       o.address && h('p', { class: 'm0' }, `Dirección: ${o.address}`),
       o.note && h('p', { class: 'm0 o-note' }, `Aclaraciones: ${o.note}`),
       h('p', { class: 'm0' }, o.payment_method ? `Pago: ${payText(o.payment_method, o.payment_combo)}` : 'Pago: a definir en el local', ' · ', h('strong', {}, `Total ${money(o.total)}`), o.delivery_fee > 0 && h('span', { class: 'pmeta' }, ` (envío ${money(o.delivery_fee)})`)),
+      o.payment_method === 'cuenta_corriente' && creditBlock(o, withActions),
       h('details', {}, h('summary', {}, 'Historial de estados'), h('ul', { class: 'o-hist' }, o.history.map((x) => h('li', {}, `${hhmm(x.at)} — ${STATUS[x.status]}`)))),
       withActions && next && h('div', { class: 'pacts o-acts' },
         h('button', { class: 'btn primary', onclick: (e) => move(o, next[0], e.currentTarget) }, next[1]),
         h('button', { class: 'btn small danger', onclick: () => confirmDlg(`¿Cancelar el pedido #${o.number}?`, 'El cliente va a ver que fue cancelado. No se puede deshacer.', 'Cancelar pedido', () => move(o, 'cancelado')) }, 'Cancelar')));
+  }
+  function creditBlock(o, editable) {
+    const acc = accounts.find((a) => a.id === o.credit_account?.id);
+    const canPick = editable && o.status === 'nuevo';
+    const over = acc && acc.credit_limit != null && acc.balance + o.total > acc.credit_limit;
+    const pick = canPick && h('select', { 'aria-label': `Cuenta del pedido #${o.number}`, onchange: async (e) => {
+      try { await api(`/owner/orders/${o.id}/credit`, { method: 'PATCH', body: { account_id: e.target.value } }); await refreshCola(); toast('Cuenta actualizada'); } catch (err) { fail(err); await refreshCola(); }
+    } }, h('option', { value: '' }, 'Elegí la cuenta…'), accounts.filter((a) => a.active || a.id === o.credit_account?.id).map((a) => h('option', { value: a.id, selected: a.id === o.credit_account?.id }, a.name)));
+    return h('div', { class: 'o-credit' },
+      h('p', { class: 'm0' }, h('strong', {}, 'Cuenta corriente: '), pick || (o.credit_account?.name || 'sin cuenta')),
+      acc && h('p', { class: 'm0 pmeta' }, `Saldo actual ${money(acc.balance)}`, acc.credit_limit != null ? ` · límite ${money(acc.credit_limit)}` : ''),
+      over && h('p', { class: 'm0 form-error' }, 'Con este pedido la cuenta supera su límite de crédito.'),
+      o.status === 'nuevo' && h('p', { class: 'm0 pmeta' }, 'Verificá que sea el cliente correcto: se carga a su cuenta cuando aceptás el pedido.'));
   }
   async function move(o, status, btn) {
     if (btn) btn.disabled = true;
@@ -89,7 +104,11 @@ export function pedidosTab({ S, api, confirmDlg, inputDlg }) {
   function paintCola(orders) {
     fill(colaBox, orders.length ? orders.map((o) => card(o, true)) : h('p', { class: 'empty' }, 'No hay pedidos para atender. Cuando llegue uno, aparece acá y te avisamos.'));
   }
-  async function refreshCola() { const { orders } = await api('/owner/orders'); live.orders = orders; paintCola(orders); }
+  async function refreshCola() {
+    const { orders } = await api('/owner/orders'); live.orders = orders;
+    try { accounts = (await api('/owner/credit')).accounts; } catch { /* sin cuentas: igual se ve la cola */ }
+    paintCola(orders);
+  }
   function cola() {
     const snd = h('input', { type: 'checkbox', id: 'snd', checked: live.sound, onchange: () => { live.sound = snd.checked; if (live.sound) beep(); } });
     paintCola(live.orders);

@@ -95,3 +95,20 @@ dialog.crop-dlg{width:min(400px,96vw);max-height:94vh;overflow:auto}
 
 .tag-ar { display: inline-block; margin-left: .4rem; padding: .05rem .4rem; border-radius: 999px; background: #e0f2fe; color: #075985; font-size: .72rem; font-weight: 700; }
 .model-box { margin: .8rem 0; padding: .7rem; border: 1px dashed var(--line, #cbd5e1); border-radius: 10px; }
+
+/* Cuentas corrientes */
+.debt { color: #b91c1c; }
+.big-balance { font-size: 1.25rem; margin: .4rem 0; }
+.ce-list li { display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; justify-content: space-between; padding: .35rem 0; border-bottom: 1px solid var(--line, #e2e8f0); }
+.ce-list li.off { opacity: .55; text-decoration: line-through; }
+.o-credit { margin: .3rem 0; padding: .4rem .6rem; border-left: 3px solid #0e7490; background: #ecfeff; border-radius: 6px; }
+.statement { margin: .6rem 0; }
+.stmt { width: 100%; border-collapse: collapse; }
+.stmt td { padding: .3rem .4rem; border-bottom: 1px solid #e2e8f0; vertical-align: top; }
+.stmt .num { text-align: right; white-space: nowrap; }
+.stmt .total td { font-weight: 700; border-top: 2px solid #0f172a; }
+@media print {
+  body.printing-statement > *:not(dialog) { display: none !important; }
+  body.printing-statement dialog { position: static; width: 100%; max-width: none; border: 0; box-shadow: none; }
+  body.printing-statement dialog .actions, body.printing-statement dialog label, body.printing-statement dialog select, body.printing-statement dialog .hint, body.printing-statement dialog > h2 { display: none !important; }
+}

@@ -29,7 +29,7 @@ export function orderingView(row, plan, table, payments = null) {
   if (!types.length) return null;
   return {
     state: row.state, types, fee: Number(row.delivery_fee) || 0,
-    methods: (payments || DEFAULT_PAYMENTS).methods, combo_options: (payments || DEFAULT_PAYMENTS).combo_options || [],
+    methods: (payments || DEFAULT_PAYMENTS).methods.filter((m) => m !== 'cuenta_corriente' || hasFeature(plan, 'cuentas_corrientes')), combo_options: (payments || DEFAULT_PAYMENTS).combo_options || [],
     table: table ? { id: table.id, label: table.label } : null,
   };
 }
@@ -74,6 +74,10 @@ export function validateOrderInput(b, view) {
     if (!Array.isArray(c) || new Set(c).size !== c.length || c.length < 2 || !c.every((x) => BASE_METHODS.includes(x) && view.combo_options.includes(x))) {
       errors.payment_combo = 'Elegí al menos dos medios para combinar entre los disponibles.';
     } else { out.payment_method = 'combinado'; out.payment_combo = BASE_METHODS.filter((m) => c.includes(m)); }
+  } else if (b.payment_method === 'cuenta_corriente') {
+    out.payment_method = 'cuenta_corriente';
+    const code = typeof b.credit_code === 'string' || typeof b.credit_code === 'number' ? String(b.credit_code).trim() : '';
+    if (!/^[0-9]{4}$/.test(code)) errors.credit_code = 'Ingresá tu código de cuenta corriente (4 números).'; else out.credit_code = code;
   } else out.payment_method = b.payment_method;
 
   if (out.type === 'mesa') {
