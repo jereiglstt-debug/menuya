@@ -22,7 +22,7 @@ Elegí el plan y "Cambiar plan". Si baja de plan, lo que ya no incluye deja de m
 - **Cambiar correo:** cuando cambia de mail. Su contraseña no cambia; si no la recuerda, generá "Recuperación" después.
 
 ## Modelos 3D (realidad aumentada) — plan Premium
-- Para cargar el modelo de un platillo: detalle del restaurante → **Administrar modelos 3D** → Subir/Reemplazar/Quitar. También puede hacerlo el dueño desde “Editar producto”.
+- Para cargar el modelo de un platillo: detalle del restaurante → **Administrar modelos 3D** → Subir/Reemplazar/Quitar. **Solo vos (administrador) podés cargar o quitar modelos**; el dueño del restaurante únicamente ve si su platillo tiene uno y te lo pide a vos.
 - **Límite:** por defecto 15 modelos por restaurante; cambialo en esa misma ventana (0 a 200).
 - **Espacio:** cada modelo pesa hasta 8 MB y se guarda junto con las fotos en Supabase. Controlá el uso en Supabase → Storage; si te acercás a 1 GB, bajá límites o cambiá de plan.
 - El modelo llega a los clientes cuando el restaurante **publica**.
@@ -42,6 +42,14 @@ Elegí el plan y "Cambiar plan". Si baja de plan, lo que ya no incluye deja de m
 - Despliegue que no llega: Cloudflare → Settings → Build (rama de producción `main` y despliegues automáticos activos).
 - Supabase pausado: el flujo `keepalive` lo evita; si lo ves pausado, reanudalo desde el panel de Supabase.
 - Un cliente no puede entrar: generá un enlace de "Recuperación".
+
+## Cuentas corrientes de clientes — plan Premium
+- Solo el plan Premium. El dueño las gestiona en su panel → **Cuentas corrientes**; vos no tenés que hacer nada salvo ejecutar la migración 0009 una vez.
+- Para que sus clientes pidan "a cuenta", el dueño tilda **Cuenta corriente** en **Métodos de pago**.
+- Cada cliente tiene un **código de 4 números** que el dueño le da. El pedido se carga al saldo recién cuando el dueño lo acepta.
+- Si un dueño te dice que "no le aparece la opción": verificá que su plan sea Premium y que haya tildado el medio de pago.
+- Si te piden borrar una cuenta con movimientos: no se puede borrar, se **archiva** (el historial se conserva a propósito).
+- Recomendación: activar *Rate limiting* en Cloudflare para `/api/*` (ver README) por los códigos de 4 dígitos.
 
 ## Rutina recomendada
 - Semanal: mirar la pestaña **Actividad** y los vencimientos.

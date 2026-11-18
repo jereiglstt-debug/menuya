@@ -161,7 +161,7 @@ Cada platillo puede tener un modelo 3D (archivo **.glb**). En la carta aparece u
 3. Subir el código a GitHub y esperar el despliegue de Cloudflare.
 
 ### Reglas (las aplica el servidor)
-- Solo Premium puede subir modelos; en otros planes no se muestran aunque existan.
+- Solo el **administrador** puede cargar o quitar modelos (los dueños no; el servidor rechaza la ruta con 404). Solo Premium los tiene; en otros planes no se muestran aunque existan.
 - Máximo **8 MB** por archivo y **15 modelos** por restaurante (el administrador lo cambia en “Administrar modelos 3D”, 0 a 200).
 - Se valida el contenido del archivo (GLB versión 2 con figura 3D). Se rechazan modelos comprimidos (Draco/Meshopt/KTX2) o que referencien archivos externos.
 - El modelo es parte del borrador: llega a los clientes al **publicar**. El reemplazado se borra tras publicar.
@@ -169,10 +169,38 @@ Cada platillo puede tener un modelo 3D (archivo **.glb**). En la carta aparece u
 - El almacenamiento comparte el bucket `menu-images`: los modelos cuentan contra el 1 GB del plan gratuito de Supabase.
 
 ### Quién carga los modelos
-- El dueño, desde “Editar producto → Modelo 3D”.
-- El administrador, desde el detalle del restaurante → “Administrar modelos 3D”.
+- **Solo el administrador**, desde el detalle del restaurante → “Administrar modelos 3D”.
+- El dueño, en “Editar producto”, solo ve un aviso de si el platillo tiene modelo y que lo gestiona el equipo de MenúYa.
 - Para crearlos: apps de escaneo con el celular (Polycam, Kiri Engine, Luma) exportando **GLB sin comprimir**. Para que se vea en tamaño real el modelo tiene que salir a escala real.
 
 ### Qué se probó y qué NO
 - Probado (tests automáticos y de navegador): permisos por plan, aislamiento entre restaurantes, límites, validación del GLB, limpieza de archivos al publicar/borrar, botón “Ver”, que el visor se cargue solo al tocarlo y que se pase el modelo con AR y tamaño fijo, y el mensaje cuando falta el visor.
 - **NO probado:** el visor real de Google (en la prueba se usó uno de reemplazo), la cámara AR en Android e iPhone, el tamaño real de los modelos, la migración 0008 contra Postgres real, y el comportamiento de la política de seguridad con el visor real. **Probarlo en un Android y un iPhone antes de ofrecerlo a clientes.**
+
+## Etapa 4h — Cuentas corrientes de clientes (plan Premium)
+
+Para clientes que consumen y **pagan a fin de mes**. Es un registro interno del restaurante: no cobra nada por internet ni emite facturas.
+
+**Puesta en marcha (en este orden):**
+1. **Supabase → SQL Editor:** ejecutar `supabase/migrations/0009_cuentas_corrientes.sql` **ANTES de subir el código nuevo**.
+2. Subir el código a GitHub (Cloudflare lo publica solo).
+3. En cada restaurante Premium que lo quiera: pestaña **Métodos de pago** → tildar **Cuenta corriente** (para que sus clientes puedan pedir "a cuenta").
+
+**Cómo funciona**
+- Pestaña **Cuentas corrientes** (solo Premium): el dueño crea cada cuenta (nombre, teléfono opcional con código de país, límite opcional). Cada cuenta recibe un **código de 4 números**.
+- **Consumos:** a mano (detalle, monto, fecha) o desde un pedido. En el pedido, el cliente elige "Cuenta corriente" e ingresa su código; el pedido llega marcado con la cuenta y **recién se carga al saldo cuando el dueño lo acepta**. Si lo cancela después, el cargo se anula. El dueño puede cambiar la cuenta mientras el pedido está nuevo.
+- **Pagos:** el dueño los registra (total o parcial) con fecha y medio.
+- **Saldo** = consumos − pagos, sin contar lo anulado. Los movimientos **no se borran**: se anulan y quedan en el historial.
+- **Límite de crédito:** solo avisa (en la cuenta, al cargar y en el pedido); no bloquea.
+- **Resumen del mes:** saldo anterior + movimientos + saldo a pagar; se imprime o se envía por WhatsApp (si la cuenta tiene teléfono).
+- Una cuenta con movimientos no se elimina: se **archiva** (su código deja de funcionar).
+
+**Seguridad**
+- Los clientes no tienen login. El código solo **identifica** la cuenta y el dueño confirma al aceptar, así que alguien que adivine un código no puede endeudar a otro sin que el dueño lo vea y lo rechace.
+- Al cliente nunca se le muestra el nombre, el saldo ni los movimientos de la cuenta. Un código inválido responde un mensaje genérico.
+- Se puede probar códigos a ciegas (hay 10.000 combinaciones): por eso se recomienda la regla de *Rate limiting* de Cloudflare sobre `/api/*` (ver arriba) y que el dueño revise la cuenta antes de aceptar.
+- Cada restaurante ve solo sus cuentas (el servidor filtra por el restaurante de la sesión; hay pruebas de aislamiento).
+
+### Qué se probó y qué NO
+- Probado (tests automáticos y de navegador): permisos por plan, aislamiento entre restaurantes, validaciones, saldo y anulaciones, límite, código inválido/archivado/ajeno, carga al aceptar y anulación al cancelar, sin filtración de datos al cliente, pantalla del dueño, resumen con enlace de WhatsApp y el pedido del cliente.
+- **NO probado:** la migración 0009 contra Postgres real (las funciones SQL `create_order`, `set_order_status` y `credit_balances` están reimplementadas en JS para las pruebas), la impresión real del resumen en papel/PDF, y el uso en celulares reales.

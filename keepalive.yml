@@ -1,0 +1,13 @@
+# Evita que Supabase (plan gratuito) pause el proyecto por inactividad:
+# consulta /api/health cada 3 días. GitHub Actions es gratuito para repos públicos
+# y tiene minutos gratuitos mensuales en privados.
+name: keepalive
+on:
+  schedule: [{ cron: '17 6 */3 * *' }]
+  workflow_dispatch:
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Consultar /api/health
+        run: curl --fail --silent --show-error --max-time 30 "${{ secrets.SITE_URL }}/api/health"

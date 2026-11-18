@@ -1,0 +1,6 @@
+:root{--m-ink:#1d1b18;--m-muted:#6b665e;--m-font:"Figtree",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+*{box-sizing:border-box}
+html{font-family:var(--m-font);background:#fbfaf7;color:var(--m-ink);line-height:1.45;-webkit-text-size-adjust:100%}
+body{margin:0}
+.m-msg{max-width:440px;margin:18vh auto;padding:0 20px;text-align:center;color:var(--m-muted)}
+.m-msg h1{color:var(--m-ink);font-size:1.4rem}
