@@ -256,7 +256,6 @@ function productDialog(p, categoryId) {
     file: h('input', { type: 'file', accept: IMG_TYPES.join(','), class: 'hidden', 'aria-label': 'Elegir foto' }),
   };
   const canFeature = S.capabilities.features.includes('destacados');
-  const canModel = S.capabilities.features.includes('modelos_3d');
   let newFile = null; let removeImage = false;
   const prev = h('div', { class: 'img-prev' }, p?.image_url ? h('img', { src: p.image_url, alt: '' }) : 'Sin foto');
   const err = h('div', { class: 'form-error hidden', role: 'alert' });
@@ -299,12 +298,6 @@ function productDialog(p, categoryId) {
         h('button', { class: 'btn small', type: 'button', onclick: () => f.file.click() }, 'Elegir foto'), f.file,
         (p?.image_url) && h('button', { class: 'btn small danger ml', type: 'button', onclick: () => { removeImage = true; newFile = null; prev.replaceChildren('Sin foto'); } }, 'Quitar foto'),
         h('p', { class: 'hint' }, 'JPG, PNG o WebP. Hasta 2 MB.'))),
-      canModel ? h('div', { class: 'model-box' },
-        h('label', {}, 'Modelo 3D para realidad aumentada'),
-        h('p', { class: 'hint' }, p?.model_url
-          ? 'Este platillo tiene modelo 3D: tus clientes ven el botón “Ver” en la carta. Para cambiarlo o quitarlo, pedíselo al equipo de MenúYa.'
-          : 'Este platillo no tiene modelo 3D. Los modelos los carga el equipo de MenúYa: pedinos el del platillo que quieras.'))
-        : h('p', { class: 'lock-note' }, 'Modelo 3D en realidad aumentada: disponible en el plan Premium.'),
       h('label', { class: 'check', for: 'f-av' }, f.avail, 'Disponible (si lo desmarcás se muestra como “Agotado”)'),
       canFeature ? h('label', { class: 'check', for: 'f-ft' }, f.feat, 'Producto destacado (aparece arriba, en “Destacados”)') : h('p', { class: 'lock-note' }, 'Destacados: disponible desde el plan Profesional.'), err,
       h('div', { class: 'actions' }, btn, h('button', { class: 'btn', type: 'button', onclick: () => d.close() }, 'Cancelar'))));
